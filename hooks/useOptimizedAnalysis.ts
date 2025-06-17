@@ -74,7 +74,7 @@ export function useOptimizedAnalysis(
   }, [document]);
   
   // Convert analysis results to unified suggestions
-  const convertToUnifiedSuggestions = useCallback((results: any, tier: string): UnifiedSuggestion[] => {
+  const convertToUnifiedSuggestions = useCallback((results: any, tier: string, currentTextData: any, currentText: string): UnifiedSuggestion[] => {
     const suggestions: UnifiedSuggestion[] = [];
     let idCounter = 0;
     
@@ -83,12 +83,12 @@ export function useOptimizedAnalysis(
     // Convert spelling errors (LanguageTool format)
     if (results.spelling && Array.isArray(results.spelling)) {
       results.spelling.forEach((error: any) => {
-        const docStart = plainTextToProseMirrorPosition(error.offset, textData.mappings);
-        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, textData.mappings);
+        const docStart = plainTextToProseMirrorPosition(error.offset, currentTextData.mappings);
+        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, currentTextData.mappings);
         
         if (docStart !== -1 && docEnd !== -1) {
           // Extract the error text from the document
-          const errorText = text.substring(error.offset, error.offset + error.length);
+          const errorText = currentText.substring(error.offset, error.offset + error.length);
           
           suggestions.push({
             id: `${tier}-spelling-${idCounter++}`,
@@ -137,8 +137,8 @@ export function useOptimizedAnalysis(
           title: 'Possible Typo',
           message: `Did you mean "${typo.suggestion}"?`,
           position: (() => {
-            const start = plainTextToProseMirrorPosition(typo.position, textData.mappings);
-            const end = plainTextToProseMirrorPosition(typo.position + typo.length, textData.mappings);
+            const start = plainTextToProseMirrorPosition(typo.position, currentTextData.mappings);
+            const end = plainTextToProseMirrorPosition(typo.position + typo.length, currentTextData.mappings);
             // Only return valid positions
             if (start !== -1 && end !== -1) {
               return { start, end };
@@ -151,10 +151,10 @@ export function useOptimizedAnalysis(
             type: 'fix' as const,
             primary: true,
             handler: async () => {
-              if (editorRef.current && textData.mappings.length > 0) {
+              if (editorRef.current && currentTextData.mappings.length > 0) {
                 // Convert plain text position to ProseMirror position
-                const pmStart = plainTextToProseMirrorPosition(typo.position, textData.mappings);
-                const pmEnd = plainTextToProseMirrorPosition(typo.position + typo.length, textData.mappings);
+                const pmStart = plainTextToProseMirrorPosition(typo.position, currentTextData.mappings);
+                const pmEnd = plainTextToProseMirrorPosition(typo.position + typo.length, currentTextData.mappings);
                 
                 if (pmStart !== -1 && pmEnd !== -1 && isValidProseMirrorRange(editorRef.current, pmStart, pmEnd)) {
                   editorRef.current.chain()
@@ -178,8 +178,8 @@ export function useOptimizedAnalysis(
     // Convert grammar errors from LanguageTool
     if (results.paragraphGrammar && Array.isArray(results.paragraphGrammar)) {
       results.paragraphGrammar.forEach((error: any) => {
-        const docStart = plainTextToProseMirrorPosition(error.offset, textData.mappings);
-        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, textData.mappings);
+        const docStart = plainTextToProseMirrorPosition(error.offset, currentTextData.mappings);
+        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, currentTextData.mappings);
         
         if (docStart !== -1 && docEnd !== -1) {
           suggestions.push({
@@ -217,8 +217,8 @@ export function useOptimizedAnalysis(
     // Convert full grammar check results
     if (results.fullGrammar && Array.isArray(results.fullGrammar)) {
       results.fullGrammar.forEach((error: any) => {
-        const docStart = plainTextToProseMirrorPosition(error.offset, textData.mappings);
-        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, textData.mappings);
+        const docStart = plainTextToProseMirrorPosition(error.offset, currentTextData.mappings);
+        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, currentTextData.mappings);
         
         if (docStart !== -1 && docEnd !== -1) {
           suggestions.push({
@@ -263,8 +263,8 @@ export function useOptimizedAnalysis(
           title: 'Repeated Word',
           message: repeat.message,
           position: (() => {
-            const start = plainTextToProseMirrorPosition(repeat.position, textData.mappings);
-            const end = plainTextToProseMirrorPosition(repeat.position + repeat.length, textData.mappings);
+            const start = plainTextToProseMirrorPosition(repeat.position, currentTextData.mappings);
+            const end = plainTextToProseMirrorPosition(repeat.position + repeat.length, currentTextData.mappings);
             // Only return valid positions
             if (start !== -1 && end !== -1) {
               return { start, end };
@@ -277,10 +277,10 @@ export function useOptimizedAnalysis(
             type: 'fix' as const,
             primary: true,
             handler: async () => {
-              if (editorRef.current && textData.mappings.length > 0) {
+              if (editorRef.current && currentTextData.mappings.length > 0) {
                 // Convert plain text position to ProseMirror position
-                const pmStart = plainTextToProseMirrorPosition(repeat.position, textData.mappings);
-                const pmEnd = plainTextToProseMirrorPosition(repeat.position + repeat.length, textData.mappings);
+                const pmStart = plainTextToProseMirrorPosition(repeat.position, currentTextData.mappings);
+                const pmEnd = plainTextToProseMirrorPosition(repeat.position + repeat.length, currentTextData.mappings);
                 
                 if (pmStart !== -1 && pmEnd !== -1 && isValidProseMirrorRange(editorRef.current, pmStart, pmEnd)) {
                   editorRef.current.chain()
@@ -316,11 +316,11 @@ export function useOptimizedAnalysis(
             type: 'highlight' as const,
             handler: async () => {
               // Find and highlight the sentence
-              const sentenceStart = text.indexOf(issue.sentence);
-              if (sentenceStart >= 0 && editorRef.current && textData.mappings.length > 0) {
+              const sentenceStart = currentText.indexOf(issue.sentence);
+              if (sentenceStart >= 0 && editorRef.current && currentTextData.mappings.length > 0) {
                 // Convert plain text position to ProseMirror position
-                const pmStart = plainTextToProseMirrorPosition(sentenceStart, textData.mappings);
-                const pmEnd = plainTextToProseMirrorPosition(sentenceStart + issue.sentence.length, textData.mappings);
+                const pmStart = plainTextToProseMirrorPosition(sentenceStart, currentTextData.mappings);
+                const pmEnd = plainTextToProseMirrorPosition(sentenceStart + issue.sentence.length, currentTextData.mappings);
                 
                 if (pmStart !== -1 && pmEnd !== -1 && isValidProseMirrorRange(editorRef.current, pmStart, pmEnd)) {
                   editorRef.current.chain()
@@ -414,18 +414,22 @@ export function useOptimizedAnalysis(
     }, []);
     
     return deduplicatedSuggestions;
-  }, [text, textData.mappings]);
+  }, []);
   
   // Update suggestions from tier
   const updateSuggestions = useCallback((results: any, tier: string) => {
+    console.log(`[useOptimizedAnalysis] updateSuggestions called for ${tier}:`, results);
     setSuggestions(prev => {
       // Remove old suggestions from this tier
       const filtered = prev.filter(s => !s.id.startsWith(tier));
       
       // Add new suggestions
-      const newSuggestions = convertToUnifiedSuggestions(results, tier);
+      const newSuggestions = convertToUnifiedSuggestions(results, tier, textData, text);
+      console.log(`[useOptimizedAnalysis] New suggestions for ${tier}:`, newSuggestions);
       
-      return [...filtered, ...newSuggestions];
+      const updated = [...filtered, ...newSuggestions];
+      console.log(`[useOptimizedAnalysis] Total suggestions after update:`, updated);
+      return updated;
     });
   }, [convertToUnifiedSuggestions]);
   
@@ -477,7 +481,9 @@ export function useOptimizedAnalysis(
     
     const runInstantChecks = async () => {
       try {
+        console.log('[useOptimizedAnalysis] Running instant checks...');
         const instant = await analysisEngine.current.runInstantChecks(instantText);
+        console.log('[useOptimizedAnalysis] Instant check results:', instant);
         setAnalyses(prev => ({ ...prev, instant }));
         updateSuggestions(instant, 'instant');
       } catch (error) {

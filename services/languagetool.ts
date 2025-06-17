@@ -74,6 +74,7 @@ export class LanguageToolService {
 
       const data = await response.json();
       console.log('LanguageTool API response:', data);
+      console.log('LanguageTool matches count:', data.matches?.length || 0);
       
       const matches: LanguageToolMatch[] = data.matches || [];
       

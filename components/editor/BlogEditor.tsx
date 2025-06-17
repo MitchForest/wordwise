@@ -181,6 +181,7 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
   
   // Receive suggestions from analysis
   const handleSuggestionsUpdate = useCallback((newSuggestions: UnifiedSuggestion[]) => {
+    console.log('[BlogEditor] handleSuggestionsUpdate called with:', newSuggestions);
     setSuggestions(newSuggestions);
     setContextSuggestions(newSuggestions); // Update context
     if (onSuggestionsUpdate) {

@@ -41,6 +41,7 @@ export class AnalysisEngine {
   
   // Tier 1: Instant checks (0ms) - Run on every keystroke
   async runInstantChecks(text: string): Promise<InstantCheckResult> {
+    console.log('[AnalysisEngine] runInstantChecks called with text length:', text?.length || 0);
     if (!text || text.length < 3) {
       return {
         spelling: [],
@@ -56,12 +57,18 @@ export class AnalysisEngine {
       this.checkRepeatedWords(text)
     ]);
     
-    return {
+    console.log('[AnalysisEngine] LanguageTool results:', languageToolResults);
+    console.log('[AnalysisEngine] Repeated words:', repeatedWords);
+    
+    const result = {
       spelling: languageToolResults || [],
       typos: [], // LanguageTool handles typos too
       repeatedWords,
       timestamp: Date.now(),
     };
+    
+    console.log('[AnalysisEngine] Instant check result:', result);
+    return result;
   }
   
   // Tier 2: Smart checks (500ms) - Current paragraph + quick SEO

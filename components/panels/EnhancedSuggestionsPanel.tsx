@@ -35,6 +35,9 @@ export function EnhancedSuggestionsPanel({
     showAllSuggestions,
     isApplyingFix,
   } = useSuggestions();
+  
+  console.log('[EnhancedSuggestionsPanel] visibleSuggestions:', visibleSuggestions);
+  console.log('[EnhancedSuggestionsPanel] visibleSuggestions count:', visibleSuggestions.length);
 
   const [animatingOutIds, setAnimatingOutIds] = useState<Set<string>>(new Set());
 
