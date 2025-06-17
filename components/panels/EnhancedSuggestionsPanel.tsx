@@ -28,14 +28,14 @@ export const EnhancedSuggestionsPanel = () => {
 
   return (
     <ScrollArea className="h-full">
-      <div className="p-4 space-y-4">
+      <div className="relative p-4 space-y-4">
         <AnimatePresence>
           {suggestions.map(suggestion => (
             <motion.div
               key={suggestion.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20, transition: { duration: 0.2 } }}
+              exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
               layout
               className="p-4 transition-all duration-300 bg-white border rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700"
             >

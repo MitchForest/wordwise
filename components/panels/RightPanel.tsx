@@ -23,8 +23,7 @@ export function RightPanel({
   content, 
   metaDescription,
   targetKeyword,
-  keywords,
-  editor
+  keywords
 }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState('suggestions');
 
@@ -59,11 +58,8 @@ export function RightPanel({
           </TabsTrigger>
         </TabsList>
         
-        <TabsContent value="suggestions" className="flex-1 m-0">
-          <EnhancedSuggestionsPanel 
-            editor={editor}
-            className="h-full"
-          />
+        <TabsContent value="suggestions" className="flex-1 m-0 min-h-0">
+          <EnhancedSuggestionsPanel />
         </TabsContent>
         
         <TabsContent value="ai" className="flex-1 m-0">

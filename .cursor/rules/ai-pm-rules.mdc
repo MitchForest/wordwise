@@ -1,0 +1,59 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# AI Assistant Project Management Rules
+
+## Quick Reference
+This project uses a `.pm` directory to maintain unified memory across sessions. Follow these rules:
+
+## Start of Session
+1. **Always read** [.pm/PROJECT_STATUS.md](mdc:.pm/PROJECT_STATUS.md) first
+2. **Check current sprint** file for context
+3. **Review epic summary** if starting new work
+4. **Review project management workflow** @.pm/pm_guide.md
+
+## During Work
+1. **Update sprint file** with progress in real-time
+2. **Document decisions** as they're made
+3. **Track all file changes** (created/modified/deleted)
+4. **Ask before assuming** - clarify requirements
+
+## Sprint Workflow
+1. Read requirements → 2. Investigate code → 3. Ask questions → 4. Create plan → 5. Get approval → 6. Execute → 7. Test → 8. Document
+
+## Testing Requirements
+Before completing any sprint, **always run**:
+- `bun lint` - Fix any linting errors
+- `bun typecheck` - Resolve all TypeScript errors
+- `bun run build` - Ensure project builds successfully
+
+**Never run** `bun dev` - ask the user to run the dev server if needed for testing.
+
+## File Updates Required
+- **Sprint file**: Update task checkboxes, decisions, and session summary
+- **PROJECT_STATUS.md**: Update current work and last modified date
+- **Epic summary**: Update if sprint scope changes
+
+## Documentation Format
+```markdown
+## Session Summary
+**Completed:**
+- Specific accomplishment
+
+**Files Changed:**
+- `created: path/to/file.ts`
+- `modified: path/to/file.ts`
+
+**Remaining:**
+- Next tasks
+```
+
+## Key Paths
+- Status: [.pm/PROJECT_STATUS.md](mdc:.pm/PROJECT_STATUS.md)
+- Epics: [.pm/epics/](mdc:.pm/epics)
+- Sprints: `.pm/epics/epic-XXX-name/sprint-XXX-feature.md`
+- Docs: [.pm/docs/](mdc:.pm/docs)
+
+**Remember**: The `.pm` directory is your persistent memory. Keep it updated!

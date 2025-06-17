@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState, useRef } from 'react';
-import { Editor } from '@tiptap/react';
-import { useDebounce, useDebouncedCallback } from 'use-debounce';
+import { useEffect, useMemo, useState } from 'react';
+import { useDebouncedCallback } from 'use-debounce';
 import { UnifiedAnalysisEngine } from '@/services/analysis/engine';
 import { useSuggestions } from '@/contexts/SuggestionContext';
+import { UnifiedSuggestion } from '@/types/suggestions';
 
 export const useUnifiedAnalysis = (doc: any, isReady: boolean) => {
   const { setSuggestions } = useSuggestions();
   const [isEngineReady, setIsEngineReady] = useState(false);
+  const [instantSuggestions, setInstantSuggestions] = useState<UnifiedSuggestion[]>([]);
+  const [fastSuggestions, setFastSuggestions] = useState<UnifiedSuggestion[]>([]);
+  
   const engine = useMemo(() => new UnifiedAnalysisEngine(), []);
 
   // Initialize the engine once.
@@ -18,26 +21,39 @@ export const useUnifiedAnalysis = (doc: any, isReady: boolean) => {
     });
   }, [engine]);
 
-  // Debounce the document content to avoid running analysis on every keystroke.
-  const [debouncedDoc] = useDebounce(doc, 500);
-
+  // Combine suggestions from all tiers.
   useEffect(() => {
-    if (!isReady || !isEngineReady || !debouncedDoc) {
-      setSuggestions([]);
+    const allSuggestions = [...instantSuggestions, ...fastSuggestions];
+    setSuggestions(allSuggestions);
+  }, [instantSuggestions, fastSuggestions, setSuggestions]);
+
+  // Debounced callback for instant checks (e.g., spelling).
+  const debouncedInstantCheck = useDebouncedCallback((currentDoc) => {
+    if (!isReady || !isEngineReady || !currentDoc) {
+      setInstantSuggestions([]);
       return;
     }
+    const results = engine.runInstantChecks(currentDoc);
+    setInstantSuggestions(results);
+  }, 300);
 
-    // Extract text content from the TipTap document structure.
-    const textContent = debouncedDoc.textContent ?? '';
-    
-    if (textContent.trim() === '') {
-      setSuggestions([]);
+  // Debounced callback for fast checks (e.g., style, grammar).
+  const debouncedFastCheck = useDebouncedCallback((currentDoc) => {
+    if (!isReady || !isEngineReady || !currentDoc) {
+      setFastSuggestions([]);
       return;
     }
-    
-    // Pass the entire document to the engine.
-    const results = engine.run(debouncedDoc);
-    setSuggestions(results);
+    console.log('[Debug] Running fast checks...');
+    const results = engine.runFastChecks(currentDoc);
+    console.log('[Debug] Fast check results:', results);
+    setFastSuggestions(results);
+  }, 800);
 
-  }, [debouncedDoc, isReady, isEngineReady, engine, setSuggestions]);
+  // Trigger analysis when the document changes.
+  useEffect(() => {
+    if (doc) {
+      debouncedInstantCheck(doc);
+      debouncedFastCheck(doc);
+    }
+  }, [doc, debouncedInstantCheck, debouncedFastCheck]);
 }; 

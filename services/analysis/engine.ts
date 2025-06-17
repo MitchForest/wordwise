@@ -1,6 +1,7 @@
 import { ReadabilityAnalyzer } from './readability';
 import { SEOAnalyzer } from './seo';
 import { StyleAnalyzer } from './style';
+import { BasicGrammarChecker } from './basic-grammar';
 import { UnifiedSuggestion } from '@/types/suggestions';
 import { spellChecker } from './spellcheck';
 
@@ -11,12 +12,14 @@ export class UnifiedAnalysisEngine {
   private readabilityAnalyzer: ReadabilityAnalyzer;
   private seoAnalyzer: SEOAnalyzer;
   private styleAnalyzer: StyleAnalyzer;
+  private basicGrammarChecker: BasicGrammarChecker;
   private isInitialized = false;
 
   constructor() {
     this.readabilityAnalyzer = new ReadabilityAnalyzer();
     this.seoAnalyzer = new SEOAnalyzer();
     this.styleAnalyzer = new StyleAnalyzer();
+    this.basicGrammarChecker = new BasicGrammarChecker();
   }
 
   async initialize() {
@@ -26,16 +29,18 @@ export class UnifiedAnalysisEngine {
     console.log('AnalysisEngine initialized');
   }
 
-  // Tier 1: Instant checks (local, ~0-50ms)
-  async runInstantChecks(text: string) {
-    // Phase 1: Will implement nspell for spell checking here
-    return Promise.resolve([]);
+  // Tier 1: Instant checks (local, ~0-50ms) - E.g., Spelling
+  runInstantChecks(doc: any): UnifiedSuggestion[] {
+    if (!this.isInitialized || !doc) return [];
+    return this.runSpellCheck(doc);
   }
 
-  // Tier 2: Smart checks (local, ~300-500ms)
-  async runSmartChecks(text: string) {
-    // Phase 2: Will implement write-good for style checking here
-    return Promise.resolve([]);
+  // Tier 2: Smart checks (local, ~300-500ms) - E.g., Style, Basic Grammar
+  runFastChecks(doc: any): UnifiedSuggestion[] {
+    if (!this.isInitialized || !doc) return [];
+    const styleSuggestions = this.styleAnalyzer.run(doc);
+    const grammarSuggestions = this.basicGrammarChecker.run(doc);
+    return [...styleSuggestions, ...grammarSuggestions];
   }
 
   // Tier 3: Deep checks (API-driven, ~2000ms)
@@ -52,12 +57,17 @@ export class UnifiedAnalysisEngine {
     });
   }
 
+  /**
+   * @deprecated The `run` method is deprecated in favor of tiered execution 
+   * (e.g., `runInstantChecks`, `runFastChecks`). It is maintained for now 
+   * to avoid breaking existing implementations but will be removed.
+   */
   run(doc: any): UnifiedSuggestion[] {
     if (!this.isInitialized || !doc) return [];
     
-    const spellingSuggestions = this.runSpellCheck(doc);
-    // In the future, other analyses will be added here and their results merged.
-
+    // For now, we only run instant checks to maintain existing behavior.
+    // This will be updated by the consuming hook.
+    const spellingSuggestions = this.runInstantChecks(doc);
     return spellingSuggestions;
   }
 

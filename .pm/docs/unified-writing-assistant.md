@@ -57,33 +57,37 @@ The architecture is designed around a three-tier timing system that balances res
 To ensure consistency and simplicity, every analysis service—whether local or remote—must convert its results into a `UnifiedSuggestion` object. This is the single source of truth for what is shown to the user.
 
 ```typescript
-interface UnifiedSuggestion {
-  // Unique identifier, e.g., "spell-142-writting"
+export interface SuggestionAction {
+  label: string;
+  type: 'fix' | 'highlight' | 'explain' | 'ignore' | 'navigate';
+  primary?: boolean;
+  value?: string; // The actual fix value for 'fix' type actions
+  handler: () => void | Promise<void>;
+}
+
+export interface UnifiedSuggestion {
   id: string;
-
-  // The service that generated the suggestion
-  source: 'spelling' | 'grammar' | 'style' | 'readability' | 'seo' | 'languagetool';
+  category: 'grammar' | 'spelling' | 'readability' | 'seo' | 'style';
+  severity: 'error' | 'warning' | 'info' | 'suggestion';
+  title: string;
+  message: string;
   
-  // The severity of the issue
-  severity: 'error' | 'warning' | 'info';
-
-  // A user-friendly category name, e.g., "Spelling", "Passive Voice"
-  category: string;              
-
-  // The exact position in the editor's document
-  position: {
+  // Position in document (for highlighting)
+  position?: {
     start: number;
     end: number;
   };
-
-  // The message explaining the suggestion
-  message: string;
   
-  // A list of possible text replacements
-  suggestions: string[];
-
-  // Internal state tracking
-  ignored?: boolean;
+  // Context for the suggestion (text around the error)
+  context?: {
+    text: string; // The actual error text
+    length?: number; // Length of the error
+    before?: string; // Text before the error
+    after?: string; // Text after the error
+  };
+  
+  // Available actions
+  actions: SuggestionAction[];
 }
 ```
 

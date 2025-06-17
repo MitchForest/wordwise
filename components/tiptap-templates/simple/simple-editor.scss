@@ -84,3 +84,17 @@ body {
     text-decoration: underline;
   }
 }
+
+.prose {
+  &:focus {
+    outline: none;
+  }
+}
+
+.prose {
+  .spell-error {
+    text-decoration: wavy underline;
+    text-decoration-color: hsl(var(--destructive));
+    cursor: pointer;
+  }
+}

@@ -1,3 +1,5 @@
+import { UnifiedSuggestion } from '@/types/suggestions';
+
 export interface BasicGrammarIssue {
   type: 'capitalization' | 'punctuation' | 'spacing';
   position: number;
@@ -153,5 +155,49 @@ export class BasicGrammarChecker {
     }
     
     return issues;
+  }
+
+  public run(doc: any): UnifiedSuggestion[] {
+    if (!doc || !doc.content) {
+      return [];
+    }
+
+    const suggestions: UnifiedSuggestion[] = [];
+    const repeatedWordRegex = /\b(\w+)\s+\1\b/gi;
+
+    doc.descendants((node: any, pos: number) => {
+      if (!node.isText || !node.text) {
+        return;
+      }
+
+      const text = node.text;
+      let match;
+
+      while ((match = repeatedWordRegex.exec(text)) !== null) {
+        const repeatedWord = match[1];
+        const from = pos + match.index;
+        const to = from + match[0].length;
+
+        suggestions.push({
+          id: `grammar-repeated-${from}-${repeatedWord}`,
+          category: 'grammar',
+          severity: 'warning',
+          title: 'Repeated Word',
+          message: `The word "${repeatedWord}" is repeated.`,
+          position: { start: from, end: to },
+          context: { text: match[0] },
+          actions: [
+            {
+              label: `Remove repetition`,
+              type: 'fix',
+              value: repeatedWord,
+              handler: () => {}, // Placeholder
+            },
+          ],
+        });
+      }
+    });
+
+    return suggestions;
   }
 }
