@@ -36,8 +36,8 @@ export class BasicGrammarChecker {
     let match;
     
     while ((match = sentenceEndPattern.exec(text)) !== null) {
-      const position = match.index + match[1].length + match[0].length - match[2].length;
       const lowercaseLetter = match[2];
+      const position = match.index + match[0].lastIndexOf(lowercaseLetter);
       
       issues.push({
         type: 'capitalization',
@@ -163,7 +163,6 @@ export class BasicGrammarChecker {
     }
 
     const suggestions: UnifiedSuggestion[] = [];
-    const repeatedWordRegex = /\b(\w+)\s+\1\b/gi;
 
     doc.descendants((node: any, pos: number) => {
       if (!node.isText || !node.text) {
@@ -171,8 +170,34 @@ export class BasicGrammarChecker {
       }
 
       const text = node.text;
-      let match;
+      
+      // Basic grammar checks (capitalization, punctuation, spacing)
+      const basicIssues = this.check(text);
+      basicIssues.forEach((issue) => {
+        const from = pos + issue.position;
+        const to = from + issue.length;
+        const errorText = text.substring(issue.position, issue.position + issue.length);
+        
+        suggestions.push({
+          id: `basic-grammar-${from}-${issue.message.replace(/\s/g, '-')}`,
+          category: 'grammar',
+          severity: 'warning',
+          title: `${issue.type.charAt(0).toUpperCase() + issue.type.slice(1)} Issue`,
+          message: issue.message,
+          position: { start: from, end: to },
+          context: { text: errorText },
+          actions: issue.suggestions.map(s => ({
+            label: `Change to "${s}"`,
+            type: 'fix',
+            value: s,
+            handler: () => {}, // Placeholder
+          })),
+        });
+      });
 
+      // Repeated word check
+      const repeatedWordRegex = /\b(\w+)\s+\1\b/gi;
+      let match;
       while ((match = repeatedWordRegex.exec(text)) !== null) {
         const repeatedWord = match[1];
         const from = pos + match.index;

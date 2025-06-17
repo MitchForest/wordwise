@@ -35,7 +35,7 @@ export const useUnifiedAnalysis = (doc: any, isReady: boolean) => {
     }
     const results = engine.runInstantChecks(currentDoc);
     setInstantSuggestions(results);
-  }, 300);
+  }, 100);
 
   // Debounced callback for fast checks (e.g., style, grammar).
   const debouncedFastCheck = useDebouncedCallback((currentDoc) => {
@@ -47,7 +47,7 @@ export const useUnifiedAnalysis = (doc: any, isReady: boolean) => {
     const results = engine.runFastChecks(currentDoc);
     console.log('[Debug] Fast check results:', results);
     setFastSuggestions(results);
-  }, 800);
+  }, 250);
 
   // Trigger analysis when the document changes.
   useEffect(() => {
