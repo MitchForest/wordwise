@@ -2,6 +2,9 @@ import { LanguageToolService } from '@/services/languagetool';
 import { SEOAnalyzer } from '@/services/analysis/seo';
 import { ReadabilityAnalyzer } from '@/services/analysis/readability';
 import { StyleAnalyzer } from '@/services/analysis/style';
+import { SpellChecker } from '@/services/analysis/spellcheck';
+import { TypoCorrector } from '@/services/analysis/typos';
+import { BasicGrammarChecker } from '@/services/analysis/basic-grammar';
 import type { Editor } from '@tiptap/react';
 
 interface InstantCheckResult {
@@ -31,12 +34,18 @@ export class AnalysisEngine {
   private seoAnalyzer: SEOAnalyzer;
   private readabilityAnalyzer: ReadabilityAnalyzer;
   private styleAnalyzer: StyleAnalyzer;
+  private spellChecker: SpellChecker;
+  private typoCorrector: TypoCorrector;
+  private basicGrammarChecker: BasicGrammarChecker;
   
   constructor() {
     this.languageTool = new LanguageToolService();
     this.seoAnalyzer = new SEOAnalyzer();
     this.readabilityAnalyzer = new ReadabilityAnalyzer();
     this.styleAnalyzer = new StyleAnalyzer();
+    this.spellChecker = new SpellChecker();
+    this.typoCorrector = new TypoCorrector();
+    this.basicGrammarChecker = new BasicGrammarChecker();
   }
   
   // Tier 1: Instant checks (0ms) - Run on every keystroke
@@ -51,19 +60,22 @@ export class AnalysisEngine {
       };
     }
     
-    // Run LanguageTool for instant spelling/grammar checks
-    const [languageToolResults, repeatedWords] = await Promise.all([
-      this.languageTool.check(text),
-      this.checkRepeatedWords(text)
+    // Use LOCAL services only - NO API CALLS
+    const [spellingResults, typoResults, grammarResults] = await Promise.all([
+      this.spellChecker.check(text),
+      this.typoCorrector.check(text),
+      this.basicGrammarChecker.check(text)
     ]);
     
-    console.log('[AnalysisEngine] LanguageTool results:', languageToolResults);
-    console.log('[AnalysisEngine] Repeated words:', repeatedWords);
+    console.log('[AnalysisEngine] Local spelling results:', spellingResults);
+    console.log('[AnalysisEngine] Local typo results:', typoResults);
+    console.log('[AnalysisEngine] Local grammar results:', grammarResults);
     
     const result = {
-      spelling: languageToolResults || [],
-      typos: [], // LanguageTool handles typos too
-      repeatedWords,
+      spelling: spellingResults || [],
+      typos: typoResults || [],
+      repeatedWords: typoResults.filter((t: any) => t.type === 'typo' && t.original.includes(' ')),
+      basicGrammar: grammarResults || [],
       timestamp: Date.now(),
     };
     
@@ -86,14 +98,15 @@ export class AnalysisEngine {
       };
     }
     
+    // Use LOCAL services only for smart checks - NO API CALLS
     const tasks = await Promise.allSettled([
-      this.languageTool.check(currentParagraph), // Only current paragraph
+      this.styleAnalyzer.analyze(currentParagraph), // Style check on current paragraph
       this.quickSEOCheck(document),
       this.checkSentenceClarity(currentParagraph),
     ]);
     
     return {
-      paragraphGrammar: this.getResult(tasks[0]),
+      paragraphGrammar: this.getResult(tasks[0]), // Now contains style issues
       quickSEO: this.getResult(tasks[1]),
       sentenceClarity: this.getResult(tasks[2]),
       timestamp: Date.now(),
@@ -200,32 +213,6 @@ export class AnalysisEngine {
     return factors > 0 ? Math.round(score / factors) : 0;
   }
   
-  private async checkRepeatedWords(text: string) {
-    const words = text.toLowerCase().split(/\s+/);
-    const repeated = [];
-    
-    for (let i = 0; i < words.length - 1; i++) {
-      if (words[i] === words[i + 1] && words[i].length > 2) {
-        // Don't flag intentional repetitions
-        const intentional = ['very', 'really', 'quite', 'much'];
-        if (intentional.includes(words[i])) continue;
-        
-        const position = text.toLowerCase().indexOf(`${words[i]} ${words[i]}`);
-        if (position !== -1) {
-          repeated.push({
-            word: words[i],
-            position,
-            length: words[i].length * 2 + 1,
-            type: 'repeated',
-            message: `The word "${words[i]}" is repeated`,
-            suggestion: words[i],
-          });
-        }
-      }
-    }
-    
-    return repeated;
-  }
   
   private async checkSentenceClarity(text: string) {
     const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);

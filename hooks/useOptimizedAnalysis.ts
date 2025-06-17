@@ -80,35 +80,32 @@ export function useOptimizedAnalysis(
     
     console.log(`Converting ${tier} results:`, results);
     
-    // Convert spelling errors (LanguageTool format)
+    // Convert spelling errors (Local SpellChecker format)
     if (results.spelling && Array.isArray(results.spelling)) {
       results.spelling.forEach((error: any) => {
-        const docStart = plainTextToProseMirrorPosition(error.offset, currentTextData.mappings);
-        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, currentTextData.mappings);
+        const docStart = plainTextToProseMirrorPosition(error.position, currentTextData.mappings);
+        const docEnd = plainTextToProseMirrorPosition(error.position + error.length, currentTextData.mappings);
         
         if (docStart !== -1 && docEnd !== -1) {
-          // Extract the error text from the document
-          const errorText = currentText.substring(error.offset, error.offset + error.length);
-          
           suggestions.push({
             id: `${tier}-spelling-${idCounter++}`,
-            category: error.category === 'TYPOS' ? 'spelling' : 'grammar',
-            severity: error.severity || 'error',
-            title: error.category === 'TYPOS' ? 'Spelling Error' : 'Grammar Issue',
-            message: error.message,
+            category: 'spelling',
+            severity: 'error',
+            title: 'Spelling Error',
+            message: `"${error.word}" appears to be misspelled`,
             position: {
               start: docStart,
               end: docEnd,
             },
             context: {
-              text: errorText,
+              text: error.word,
               length: error.length,
             },
-            actions: error.replacements.map((replacement: any, idx: number) => ({
-              label: replacement.value,
+            actions: error.suggestions.map((suggestion: string, idx: number) => ({
+              label: suggestion,
               type: 'fix' as const,
               primary: idx === 0,
-              value: replacement.value,
+              value: suggestion,
               handler: () => {
                 if (!editorRef.current) return;
                 
@@ -117,7 +114,7 @@ export function useOptimizedAnalysis(
                     .focus()
                     .setTextSelection({ from: docStart, to: docEnd })
                     .deleteRange({ from: docStart, to: docEnd })
-                    .insertContent(replacement.value)
+                    .insertContent(suggestion)
                     .run();
                 }
               }
@@ -175,40 +172,61 @@ export function useOptimizedAnalysis(
       });
     }
     
-    // Convert grammar errors from LanguageTool
-    if (results.paragraphGrammar && Array.isArray(results.paragraphGrammar)) {
-      results.paragraphGrammar.forEach((error: any) => {
-        const docStart = plainTextToProseMirrorPosition(error.offset, currentTextData.mappings);
-        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, currentTextData.mappings);
+    // Convert style issues from write-good (now in paragraphGrammar for smart checks)
+    if (results.paragraphGrammar && results.paragraphGrammar.issues && Array.isArray(results.paragraphGrammar.issues)) {
+      results.paragraphGrammar.issues.forEach((issue: any) => {
+        const docStart = plainTextToProseMirrorPosition(issue.index, currentTextData.mappings);
+        const docEnd = plainTextToProseMirrorPosition(issue.index + issue.offset, currentTextData.mappings);
         
         if (docStart !== -1 && docEnd !== -1) {
+          const typeTitle = issue.type === 'passive' ? 'Passive Voice' :
+                           issue.type === 'adverb' ? 'Adverb Use' :
+                           issue.type === 'cliche' ? 'Cliché' :
+                           issue.type === 'weasel' ? 'Weasel Words' :
+                           issue.type === 'lexical-illusion' ? 'Repeated Word' :
+                           issue.type === 'so-start' ? 'Sentence Start' : 'Style Issue';
+          
           suggestions.push({
-            id: `${tier}-grammar-${idCounter++}`,
-            category: 'grammar', // Both spelling and grammar use 'grammar' category
-            title: error.category === 'TYPOS' ? 'Spelling Error' : 'Grammar Issue',
-            message: error.message,
-            severity: error.severity || 'warning',
+            id: `${tier}-style-${idCounter++}`,
+            category: 'style',
+            title: typeTitle,
+            message: issue.reason,
+            severity: 'suggestion',
             position: {
               start: docStart,
               end: docEnd,
             },
-            actions: error.replacements.map((replacement: any, idx: number) => ({
-              label: replacement.value,
-              type: 'fix' as const,
-              primary: idx === 0,
-              handler: () => {
-                if (!editorRef.current) return;
-                
-                if (isValidProseMirrorRange(editorRef.current, docStart, docEnd)) {
-                  editorRef.current.chain()
-                    .focus()
-                    .setTextSelection({ from: docStart, to: docEnd })
-                    .deleteSelection()
-                    .insertContent(replacement.value)
-                    .run();
+            actions: issue.suggestions && issue.suggestions.length > 0 ? 
+              issue.suggestions.map((suggestion: string, idx: number) => ({
+                label: suggestion,
+                type: 'fix' as const,
+                primary: idx === 0,
+                handler: () => {
+                  if (!editorRef.current) return;
+                  
+                  if (isValidProseMirrorRange(editorRef.current, docStart, docEnd)) {
+                    editorRef.current.chain()
+                      .focus()
+                      .setTextSelection({ from: docStart, to: docEnd })
+                      .deleteSelection()
+                      .insertContent(suggestion)
+                      .run();
+                  }
                 }
-              }
-            }))
+              })) : [{
+                label: 'Highlight',
+                type: 'highlight' as const,
+                handler: () => {
+                  if (!editorRef.current) return;
+                  
+                  if (isValidProseMirrorRange(editorRef.current, docStart, docEnd)) {
+                    editorRef.current.chain()
+                      .focus()
+                      .setTextSelection({ from: docStart, to: docEnd })
+                      .run();
+                  }
+                }
+              }]
           });
         }
       });
@@ -298,6 +316,57 @@ export function useOptimizedAnalysis(
             },
           }],
         });
+      });
+    }
+    
+    // Convert basic grammar issues (new local format)
+    if (results.basicGrammar && Array.isArray(results.basicGrammar)) {
+      results.basicGrammar.forEach((issue: any) => {
+        const docStart = plainTextToProseMirrorPosition(issue.position, currentTextData.mappings);
+        const docEnd = plainTextToProseMirrorPosition(issue.position + issue.length, currentTextData.mappings);
+        
+        if (docStart !== -1 && docEnd !== -1) {
+          suggestions.push({
+            id: `${tier}-grammar-basic-${idCounter++}`,
+            category: 'grammar',
+            severity: issue.type === 'spacing' ? 'suggestion' : 'warning',
+            title: issue.type === 'capitalization' ? 'Capitalization' : 
+                   issue.type === 'punctuation' ? 'Punctuation' : 'Spacing',
+            message: issue.message,
+            position: {
+              start: docStart,
+              end: docEnd,
+            },
+            actions: issue.suggestions.map((suggestion: string, idx: number) => ({
+              label: suggestion,
+              type: 'fix' as const,
+              primary: idx === 0,
+              value: suggestion,
+              handler: () => {
+                if (!editorRef.current) return;
+                
+                if (isValidProseMirrorRange(editorRef.current, docStart, docEnd)) {
+                  if (issue.length === 0) {
+                    // For insertions (like missing space after punctuation)
+                    editorRef.current.chain()
+                      .focus()
+                      .setTextSelection({ from: docStart, to: docStart })
+                      .insertContent(suggestion)
+                      .run();
+                  } else {
+                    // For replacements
+                    editorRef.current.chain()
+                      .focus()
+                      .setTextSelection({ from: docStart, to: docEnd })
+                      .deleteRange({ from: docStart, to: docEnd })
+                      .insertContent(suggestion)
+                      .run();
+                  }
+                }
+              }
+            }))
+          });
+        }
       });
     }
     
