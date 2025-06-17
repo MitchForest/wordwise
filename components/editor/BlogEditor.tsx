@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { EditorContent, EditorContext, useEditor } from '@tiptap/react';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useGrammarCheck } from '@/hooks/useGrammarCheck';
@@ -10,6 +10,7 @@ import { DocumentHeader } from './DocumentHeader';
 import { SEOSettings } from './SEOSettings';
 import { GrammarContextMenu } from './GrammarContextMenu';
 import type { JSONContent } from '@tiptap/react';
+import type { UnifiedSuggestion } from '@/types/suggestions';
 import { AnimatePresence } from 'framer-motion';
 
 // --- Tiptap Core Extensions ---
@@ -29,7 +30,8 @@ import { Link } from '@/components/tiptap-extension/link-extension';
 import { Selection } from '@/components/tiptap-extension/selection-extension';
 import { TrailingNode } from '@/components/tiptap-extension/trailing-node-extension';
 import { ImageUploadNode } from '@/components/tiptap-node/image-upload-node/image-upload-node-extension';
-import { GrammarDecorationExtension } from './extensions/GrammarDecoration';
+import { EnhancedGrammarDecoration, updateSuggestions } from './extensions/EnhancedGrammarDecoration';
+import { GrammarHoverCard } from './GrammarHoverCard';
 
 // --- UI Primitives ---
 import { Spacer } from '@/components/tiptap-ui-primitive/spacer';
@@ -75,9 +77,10 @@ interface BlogEditorProps {
     content?: JSONContent;
     targetKeyword?: string;
   };
+  onSuggestionsUpdate?: (suggestions: UnifiedSuggestion[]) => void;
 }
 
-export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
+export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }: BlogEditorProps) {
   const { data: session } = useSession();
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [metaDescription, setMetaDescription] = useState(initialDocument?.metaDescription || '');
@@ -85,6 +88,13 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const [targetKeyword, setTargetKeyword] = useState(initialDocument?.targetKeyword || '');
   const [keywords, setKeywords] = useState<string[]>(initialDocument?.keywords || []);
   const [rightPanelOpen, setRightPanelOpen] = useState(true); // Open by default
+  
+  // Hover card state
+  const [hoveredSuggestion, setHoveredSuggestion] = useState<UnifiedSuggestion | null>(null);
+  const [hoveredElement, setHoveredElement] = useState<HTMLElement | null>(null);
+  
+  // Store suggestions for decorations
+  const [suggestions, setSuggestions] = useState<UnifiedSuggestion[]>([]);
   
   const editor = useEditor({
     immediatelyRender: false,
@@ -117,7 +127,21 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
       }),
       TrailingNode,
       Link.configure({ openOnClick: false }),
-      GrammarDecorationExtension,
+      EnhancedGrammarDecoration.configure({
+        suggestions: [], // Will be updated via updateSuggestions
+        onSuggestionHover: (suggestion, element) => {
+          setHoveredSuggestion(suggestion);
+          setHoveredElement(element);
+        },
+        onSuggestionClick: (suggestion, element) => {
+          setHoveredSuggestion(suggestion);
+          setHoveredElement(element);
+        },
+        onApplyFix: (suggestion, fix) => {
+          console.log('Applying fix:', fix);
+          // The fix will be handled by the suggestion's action handler
+        },
+      }),
     ],
     content: initialDocument?.content || '',
   });
@@ -139,6 +163,21 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
       // saveState is now managed by useAutoSave hook
     }
   }, [lastSaved]);
+  
+  // Update decorations when suggestions change
+  useEffect(() => {
+    if (editor && suggestions.length > 0) {
+      updateSuggestions(editor, suggestions);
+    }
+  }, [editor, suggestions]);
+  
+  // Receive suggestions from analysis
+  const handleSuggestionsUpdate = useCallback((newSuggestions: UnifiedSuggestion[]) => {
+    setSuggestions(newSuggestions);
+    if (onSuggestionsUpdate) {
+      onSuggestionsUpdate(newSuggestions);
+    }
+  }, [onSuggestionsUpdate]);
 
   // Sync title updates
   useEffect(() => {
@@ -309,6 +348,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
             targetKeyword={targetKeyword}
             keywords={keywords}
             editor={editor}
+            onSuggestionsUpdate={handleSuggestionsUpdate}
           />
         )}
       </AnimatePresence>
@@ -325,6 +365,25 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
           />
         </div>
       )}
+      
+      {/* Grammar Hover Card */}
+      <GrammarHoverCard
+        suggestion={hoveredSuggestion}
+        targetElement={hoveredElement}
+        onApplyFix={(suggestion, fix) => {
+          // Apply the fix by executing the suggestion's action handler
+          const action = suggestion.actions.find(a => a.label === fix);
+          if (action?.handler) {
+            action.handler();
+            setHoveredSuggestion(null);
+            setHoveredElement(null);
+          }
+        }}
+        onDismiss={() => {
+          setHoveredSuggestion(null);
+          setHoveredElement(null);
+        }}
+      />
     </div>
   );
 } 

@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SuggestionsPanel } from './SuggestionsPanel';
 import { AIChatPanel } from './AIChatPanel';
 import { motion } from 'framer-motion';
-import { useAnalysis } from '@/hooks/useAnalysis';
+import { useOptimizedAnalysis } from '@/hooks/useOptimizedAnalysis';
 import type { Editor } from '@tiptap/react';
 import type { UnifiedSuggestion } from '@/types/suggestions';
 
@@ -17,6 +17,7 @@ interface RightPanelProps {
   targetKeyword?: string;
   keywords?: string[];
   editor: Editor | null;
+  onSuggestionsUpdate?: (suggestions: UnifiedSuggestion[]) => void;
 }
 
 export function RightPanel({ 
@@ -26,7 +27,8 @@ export function RightPanel({
   metaDescription,
   targetKeyword,
   keywords,
-  editor
+  editor,
+  onSuggestionsUpdate
 }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState('suggestions');
 
@@ -39,11 +41,18 @@ export function RightPanel({
     keywords: keywords || [],
   }), [documentId, title, metaDescription, targetKeyword, keywords]);
 
-  // Use the analysis hook
-  const { suggestions, scores, isAnalyzing } = useAnalysis(editor, document);
+  // Use the optimized analysis hook with three-tier system
+  const { suggestions, scores, isAnalyzing } = useOptimizedAnalysis(editor, document);
+  
+  // Call onSuggestionsUpdate when suggestions change
+  useEffect(() => {
+    if (onSuggestionsUpdate) {
+      onSuggestionsUpdate(suggestions);
+    }
+  }, [suggestions, onSuggestionsUpdate]);
 
   // Handle applying suggestions
-  const handleApplySuggestion = async (suggestion: UnifiedSuggestion, action: UnifiedSuggestion['actions'][0]) => {
+  const handleApplySuggestion = async (_suggestion: UnifiedSuggestion, action: UnifiedSuggestion['actions'][0]) => {
     await action.handler();
     // The handler should update the editor directly
   };
