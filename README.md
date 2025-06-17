@@ -6,85 +6,49 @@ A specialized writing assistant designed for blog owners who want to create SEO-
 
 WordWise combines real-time grammar checking, SEO optimization, readability analysis, and AI-powered content enhancement into a single platform. Unlike general-purpose writing tools, WordWise is specifically built for content creators who need to balance quality writing with search engine performance.
 
-## Target Users
+## Who is WordWise for?
 
-### Primary: Independent Blog Owners
-- Content creators, small business owners, freelance writers
-- Goal: Increase organic traffic and improve search rankings
-- Challenge: Need professional content without SEO expertise
-- Pain Points: Writer's block, complex SEO requirements, inconsistent quality
+WordWise is built for independent blog owners, content creators, small business owners, and freelance writers.
 
-### Secondary Users
-- Marketing teams creating consistent, optimized content
-- Freelance writers requiring professional tools
-- Small businesses improving content without hiring specialists
+- **Goal**: To increase organic traffic, improve search rankings, and publish professional-quality content.
+- **Challenge**: You need to produce great content but may not be an expert in SEO's technical demands.
+- **Pain Points**: Overcoming writer's block, navigating complex SEO requirements, and fixing grammar and style inconsistencies.
 
-## Key Features
+Our secondary users include marketing teams and small businesses aiming to streamline their content creation process without hiring specialists.
 
-### 🔍 Real-time Writing Quality
-**Three-Tier Checking System:**
-- **Instant (0ms)**: Spell checking and basic corrections
-- **Smart (500ms)**: Grammar checking on current paragraph
-- **Deep (2s)**: Full document analysis for complex issues
+## Core Features: A User-Centric Approach
 
-**Visual Feedback:**
-- Color-coded underlines (red: critical, amber: warnings, blue: suggestions)
-- Hover cards with explanations and one-click fixes
-- Non-intrusive corrections that don't interrupt writing flow
+WordWise is designed around the real-world needs of content creators. Our features are directly mapped to user stories that address the core challenges of blogging.
 
-### 📈 SEO Content Optimization
-**Real-time SEO Analysis:**
-- Target keyword density tracking (1-2% optimal)
-- Title optimization (50-60 characters with keyword placement)
-- Meta description scoring (150-160 characters)
-- Heading structure validation (proper H1 → H2 → H3 hierarchy)
+### 1. Real-time Writing Quality
+> *"As a blog owner, I want instant grammar and spelling corrections while I write, so I can publish professional content that builds trust with readers and search engines."*
 
-**Smart SEO Features:**
-- Natural keyword placement suggestions
-- LSI (related) keyword recommendations
-- Keyword stuffing prevention
-- SERP preview with live updates
+WordWise offers a three-tier checking system for instant spellcheck, smart grammar analysis, and deep document-wide checks. Visual, non-intrusive feedback through color-coded underlines and hover cards allows you to fix issues with a single click without breaking your writing flow.
 
-### 🤖 AI Writing Assistant
-**Content Generation:**
-- Blog post outline generation from topic + keywords
-- Introduction and conclusion creation
-- Bullet point expansion into full paragraphs
-- SEO-focused rewriting to include keywords naturally
+### 2. SEO Content Optimization
+> *"As a blog owner, I want real-time SEO feedback and keyword optimization suggestions, so I can improve my search rankings while maintaining natural, readable content."*
 
-**AI Chat Interface:**
-- Document-aware conversations that understand your content
-- Quick action buttons: "Make this engaging", "Improve SEO", "Simplify"
-- Multi-step content enhancement with progress tracking
-- Preview/accept/reject interface for all suggestions
+Get real-time feedback on target keyword density, title length, meta descriptions, and heading structure. WordWise provides smart suggestions to help you integrate keywords naturally, avoid stuffing, and optimize your content for search engines.
 
-### 📊 Publication Readiness Dashboard
-**Unified Quality Scoring (0-100):**
-- **Grammar & Spelling**: Critical errors, warnings, style suggestions
-- **SEO Optimization**: Title, meta description, keyword usage, structure
-- **Readability**: Grade level, reading time, engagement potential
-- **Style & Clarity**: Passive voice detection, sentence variety, word choice
+### 3. AI Writing Assistant for Writer's Block
+> *"As a blog owner, I want AI-powered content generation and rewriting suggestions when I'm stuck, so I can overcome writer's block and maintain consistent publishing schedules."*
 
-**Publication Checklist:**
-- All critical grammar errors resolved
-- SEO score above 75
-- Reading level appropriate for audience
-- Meta description optimized
-- Target keywords naturally integrated
+Our AI assistant helps you generate blog post outlines, write introductions and conclusions, and even expand bullet points into full paragraphs. The document-aware chat can rewrite sections for tone, improve clarity, or enhance SEO, all with a simple command.
 
-### 📝 Content Structure & Flow
-- Heading hierarchy validation
-- Paragraph length optimization (50-300 words)
-- Table of contents generation for long posts
-- Logical progression and flow analysis
-- Call-to-action placement suggestions
+### 4. Content Structure and Flow
+> *"As a blog owner, I want intelligent suggestions for content organization and paragraph flow, so my posts are logically structured and easy for readers to follow."*
 
-### ✨ Style Enhancement
-- Passive voice detection with active alternatives
-- Sentence variety scoring for better rhythm
-- Power word suggestions for emotional impact
-- Tone consistency throughout document
-- Engagement optimization for target audience
+WordWise analyzes your content's structure, validating heading hierarchy, optimizing paragraph length, and ensuring a logical flow. This helps create content that is easy for readers to scan and understand.
+
+### 5. Writing Style Enhancement
+> *"As a blog owner, I want style improvements that eliminate passive voice and increase engagement, so my content is more compelling and authoritative."*
+
+Improve your writing with tools that detect passive voice, analyze sentence variety, and suggest stronger word choices. Our style checker helps you maintain a consistent tone and create more engaging content for your audience.
+
+### 6. Publication Readiness Dashboard
+> *"As a blog owner, I want a comprehensive quality score showing grammar, SEO, readability, and engagement metrics, so I know exactly when my content is ready to publish and will perform well."*
+
+A unified dashboard gives you a 0-100 score across Grammar, SEO, Readability, and Style. A publication-ready checklist ensures you've addressed all critical issues before you hit "publish."
 
 ## How It Works
 
@@ -200,36 +164,6 @@ npm run dev
 - Real-time scoring and feedback as you type
 - Document management and auto-save
 - Specialized analysis for search optimization
-
-## Success Metrics
-
-- **Performance**: Sub-2 second analysis response time
-- **Grammar Accuracy**: 95%+ error detection
-- **SEO Effectiveness**: 40% average keyword optimization improvement
-- **User Experience**: No typing interruption, seamless workflow
-- **Content Quality**: 25% average readability improvement
-
-## Development Status
-
-### Phase 1 (Current): Core Functionality
-- ✅ Real-time grammar and spell checking
-- ✅ SEO analysis and scoring
-- ✅ Readability assessment
-- ✅ Style analysis and suggestions
-- 🚧 Inline decorations and hover cards
-- 🚧 Data persistence optimization
-
-### Phase 2: Enhanced Experience
-- 🚧 AI content generation and improvement
-- 🚧 Unified scoring dashboard
-- 🚧 Advanced SEO integration
-- ⏳ Multi-step content enhancement
-
-### Phase 3: Advanced Features
-- ⏳ Voice input and dictation
-- ⏳ Team collaboration features
-- ⏳ Direct CMS publishing integration
-- ⏳ Advanced analytics dashboard
 
 ## Contributing
 

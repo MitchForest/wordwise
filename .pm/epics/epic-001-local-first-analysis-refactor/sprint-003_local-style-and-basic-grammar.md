@@ -1,50 +1,61 @@
-# Sprint 003: Local Style & Basic Grammar
+# Sprint 003: Local Analysis & Interactive UX
 
 **Status:** In Progress
 **Epic:** 001 - Local-First Analysis Refactor
 **Date Started:** 2024-05-24
 
 ## Goal
-The goal of this sprint is to expand our local-first analysis capabilities beyond spelling by implementing style suggestions and basic grammar checks. This will be achieved by integrating the `write-good` library and creating a custom service for simple, rule-based checks, while refactoring the engine to support a tiered analysis architecture.
+The goal of this sprint is to expand local-first analysis to include style and basic grammar checks, and to build a rich, interactive user experience for viewing and acting on suggestions. This involves refactoring the analysis engine, implementing new analysis services, and then building the UI/UX to support features like color-coded suggestions, hover-to-highlight interactivity, and a robust side panel.
 
-## Plan
+## Completed Work
 
-- [ ] **Phase 1: Architectural Refactor & Tech Debt**
-    - [ ] **1. Refactor `UnifiedAnalysisEngine` (`engine.ts`) to be Tier-Aware:**
-        - [ ] Modify the main `run()` method to orchestrate calls to tiered methods (`runInstantChecks`, `runFastChecks`).
-        - [ ] Move the existing spell-check logic from the main `run()` method into `runInstantChecks()`.
-        - [ ] Ensure the engine aggregates suggestions from all tiers correctly.
-    - [ ] **2. Install `write-good` Dependency:**
-        - [ ] Add `write-good` and its type definitions (`@types/write-good`) to the project's `devDependencies`.
-    - [ ] **3. Update Documentation:**
-        - [ ] In `.pm/docs/unified-writing-assistant.md`, update the `UnifiedSuggestion` interface to match the canonical definition in `types/suggestions.ts`.
+- **Phase 1: Backend Analysis Engine**
+    - [x] **Engine Refactor:** The `UnifiedAnalysisEngine` in `services/analysis/engine.ts` has been successfully refactored to support a tiered architecture (`runInstantChecks`, `runFastChecks`).
+    - [x] **Dependency Installation:** The `write-good` library and its types have been added to the project.
+    - [x] **Style Service:** A `StyleAnalyzer` using `write-good` has been implemented in `services/analysis/style.ts` and integrated into the `fastChecks` tier.
+    - [x] **Grammar Service:** A `BasicGrammarChecker` with a rule for repeated words has been implemented in `services/analysis/basic-grammar.ts` and integrated into the `fastChecks` tier.
+    - [x] **Hook Integration:** The `useUnifiedAnalysis` hook has been updated to call the new tiered engine methods with appropriate debouncing, feeding suggestions into the `SuggestionContext`.
 
-- [ ] **Phase 2: Implement Analysis Services**
-    - [ ] **4. Implement `StyleService`:**
-        - [ ] Completely refactor the placeholder file at `services/analysis/style.ts`.
-        - [ ] Create a `StyleAnalyzer` class with a `run(doc: any)` method.
-        - [ ] The method will use `doc.descendants` to iterate through text nodes.
-        - [ ] For each node, it will execute `write-good`, mapping its findings to the `UnifiedSuggestion` format (category: `'style'`, severity: `'suggestion'`). Each suggestion will include actionable fixes.
-    - [ ] **5. Create and Implement `BasicGrammarService`:**
-        - [ ] Create a new file at `services/analysis/basic-grammar.ts`.
-        - [ ] Implement a `BasicGrammarChecker` class with a `run(doc: any)` method.
-        - [ ] Add a rule to detect and suggest corrections for repeated words (e.g., "the the").
-        - [ ] Ensure the service returns suggestions in the `UnifiedSuggestion` format (category: `'grammar'`, severity: `'warning'`).
+- **Phase 2: Initial UI/UX Fixes**
+    - [x] **Scrolling Panel:** The suggestions panel (`EnhancedSuggestionsPanel.tsx`) now uses a `<ScrollArea>` component, fixing the vertical scrolling issue.
+    - [x] **Underline Foundation:** The Tiptap extension `EnhancedGrammarDecoration.tsx` now correctly assigns CSS classes based on both suggestion `category` (e.g., `grammar-spelling`) and `severity` (e.g., `grammar-error`).
 
-- [ ] **Phase 3: Integration & Hook Updates**
-    - [ ] **6. Integrate New Services into the Engine:**
-        - [ ] In `services/analysis/engine.ts`, import and instantiate the new `StyleAnalyzer` and `BasicGrammarChecker`.
-        - [ ] Call both new analyzers within the `runFastChecks()` method.
-    - [ ] **7. Update `useUnifiedAnalysis` Hook:**
-        - [ ] Refactor the hook to use the new tiered engine methods.
-        - [ ] Use `useDebouncedCallback` to trigger `runFastChecks` on a ~500ms delay.
-        - [ ] Continue to run `runInstantChecks` on the existing, shorter debounce.
-        - [ ] Ensure suggestions from all tiers are correctly merged and set in the `SuggestionContext`.
+---
+## Remaining Tasks
 
-- [ ] **Phase 4: Validation & Finalization**
+- [ ] **Phase 3: Enhance UI Visuals & Feedback**
+    - [ ] **1. Implement Color-Coded Underlines:**
+        - [ ] In `app/globals.css`, create distinct underline color styles for `.grammar-spelling`, `.grammar-grammar`, and `.grammar-style` classes to provide immediate visual feedback in the editor.
+            - **Spelling:** Red
+            - **Grammar:** Blue
+            - **Style:** Green
+    - [ ] **2. Implement Color-Coded Badges:**
+        - [ ] In `EnhancedSuggestionsPanel.tsx`, replace the plain text category display with the `Badge` component from `components/ui/badge.tsx`.
+        - [ ] Add color variants to the `Badge` component that correspond to the suggestion categories (Red for Spelling, Blue for Grammar, Green for Style).
+    - [ ] **3. Implement Suggestion De-duplication:**
+        - [ ] In `services/analysis/engine.ts`, add logic to filter out duplicate or overlapping suggestions from different analyzers before they are sent to the UI. A suggestion with a higher severity should take precedence.
+
+- [ ] **Phase 4: Implement Interactive Highlighting**
+    - [ ] **4. Lift Editor State:** This is a critical architectural change.
+        - [ ] In `app/doc/[id]/page.tsx`, initialize the Tiptap `useEditor` hook.
+        - [ ] Pass the `editor` instance down to the `BlogEditor` component.
+        - [ ] Pass the `editor` instance to the `RightPanel` (likely via `AppLayout` or a new context).
+    - [ ] **5. Create Shared Hover State:**
+        - [ ] In `contexts/SuggestionContext.tsx`, add state for `activeSuggestionId: string | null`.
+        - [ ] Add `setActiveSuggestionId` and `clearActiveSuggestionId` functions to the context.
+    - [ ] **6. Connect Editor and Panel to Shared State:**
+        - [ ] In `EnhancedGrammarDecoration.tsx`, add `mouseover` and `mouseout` event handlers to the decorations. These handlers will call `setActiveSuggestionId` and `clearActiveSuggestionId` from the context.
+        - [ ] In `EnhancedSuggestionsPanel.tsx`, add `onMouseEnter` and `onMouseLeave` props to the suggestion card's container (`motion.div`). These will also update the shared state.
+        - [ ] Conditionally apply a highlight style (e.g., a different background color or border) to both the editor underline and the suggestion card when their corresponding suggestion ID matches the `activeSuggestionId`.
+    - [ ] **7. Implement Auto-Scrolling:**
+        - [ ] In `EnhancedSuggestionsPanel.tsx`, create a `useEffect` hook that observes changes to `activeSuggestionId`.
+        - [ ] When `activeSuggestionId` changes, find the corresponding suggestion card in the DOM.
+        - [ ] Use `scrollIntoView({ behavior: 'smooth', block: 'nearest' })` to automatically bring the active card into view if it's not already visible.
+
+- [ ] **Phase 5: Validation & Finalization**
     - [ ] **8. Testing and Validation:**
-        - [ ] Test that passive voice and repeated-word suggestions appear and can be applied correctly.
-        - [ ] Confirm that spelling suggestions continue to work without regression.
+        - [ ] Test that all new UI features (colored underlines, badges, hover highlighting, auto-scrolling) work as expected.
+        - [ ] Confirm that all previous functionality (spelling, style, grammar checks) continues to work without regression.
     - [ ] **9. Code Quality Checks:**
         - [ ] Run `bun lint`, `bun typecheck`, and `bun run build` to ensure no new issues have been introduced.
     - [ ] **10. Final Documentation:**
@@ -54,30 +65,12 @@ The goal of this sprint is to expand our local-first analysis capabilities beyon
 
 ## Decisions
 
-*   The initial plan was updated to incorporate a tiered analysis architecture (`instant`, `fast`, `deep`) as outlined in the project documentation, which required refactoring the `UnifiedAnalysisEngine`.
-*   The `useAnalysis.ts` hook was identified as obsolete technical debt and was deleted. The UI components relying on it were refactored to use the new context-based architecture.
-*   The `UnifiedSuggestion` interface definition in the project documentation (`unified-writing-assistant.md`) was updated to match the canonical, in-code definition from `types/suggestions.ts` to resolve inconsistency.
+*   The initial backend work for style and grammar checks was completed successfully.
+*   Work began on enhancing the UI/UX, but revealed architectural limitations, specifically the need for shared state between the editor and the side panel.
+*   A plan has been formulated to lift the Tiptap editor state to a higher-level component (`app/doc/[id]/page.tsx`) to enable two-way data binding for interactive features.
+*   A clear color-coding scheme will be used for suggestions: **Red** (Spelling), **Blue** (Grammar), and **Green** (Style).
 
 ---
 
 ## Session Summary
-
-**Completed:**
-- We successfully refactored the `UnifiedAnalysisEngine` to support tiered analysis.
-- A new `StyleAnalyzer` service using `write-good` was implemented and integrated.
-- A new `BasicGrammarChecker` service was implemented with a rule for repeated words.
-- The `useUnifiedAnalysis` hook was updated to orchestrate the new "instant" and "fast" analysis tiers.
-- Significant technical debt was removed by deleting the old `useAnalysis.ts` hook and refactoring dependent components.
-- All type and linting errors were resolved, and the project builds successfully.
-
-**Files Changed:**
-- `modified: services/analysis/engine.ts`
-- `created: services/analysis/style.ts` (after being refactored from a placeholder)
-- `created: services/analysis/basic-grammar.ts`
-- `modified: hooks/useUnifiedAnalysis.ts`
-- `deleted: hooks/useAnalysis.ts`
-- `modified: components/panels/RightPanel.tsx`
-- `modified: .pm/docs/unified-writing-assistant.md`
-
-**Remaining:**
-- None. This sprint is complete. 
+*(To be filled out upon completion of the sprint)* 
