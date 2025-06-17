@@ -22,7 +22,7 @@ export interface UnifiedSuggestion {
   // Available actions
   actions: Array<{
     label: string;
-    type: 'fix' | 'highlight' | 'explain' | 'ignore';
+    type: 'fix' | 'highlight' | 'explain' | 'ignore' | 'navigate';
     primary?: boolean;
     handler: () => void | Promise<void>;
   }>;
@@ -30,7 +30,7 @@ export interface UnifiedSuggestion {
   // For AI enhancement in Phase 3
   aiActions?: Array<{
     label: string;
-    type: 'rewrite' | 'simplify' | 'expand';
+    type: 'rewrite' | 'simplify' | 'expand' | 'generate';
     requiresAI: true;
   }>;
 }

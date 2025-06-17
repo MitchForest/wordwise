@@ -1,10 +1,11 @@
 import { AuthForms } from '@/components/auth/AuthForms';
+import { WordWiseHeroSVG } from '@/components/marketing/WordWiseHeroSVG';
 
 export function HeroSection() {
   return (
     <section className="min-h-screen flex items-center">
-      <div className="container mx-auto px-6">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
+      <div className="container mx-auto px-12 lg:px-20">
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center max-w-6xl mx-auto">
           {/* Left: Auth Forms */}
           <div>
             <h1 className="text-5xl font-bold mb-6">
@@ -16,12 +17,10 @@ export function HeroSection() {
             <AuthForms />
           </div>
           
-          {/* Right: Hero Image */}
+          {/* Right: Hero SVG Illustration */}
           <div className="hidden lg:block">
-            <div className="bg-gradient-to-br from-blue-100 to-purple-100 rounded-lg p-8 shadow-xl">
-              <div className="bg-white rounded-lg shadow-lg p-6">
-                <div className="h-64 bg-gray-100 rounded animate-pulse" />
-              </div>
+            <div className="max-w-2xl mx-auto">
+              <WordWiseHeroSVG />
             </div>
           </div>
         </div>

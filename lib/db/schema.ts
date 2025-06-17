@@ -96,6 +96,12 @@ export const documents = pgTable('documents', {
     };
   }>(),
   
+  // Score fields for quick access
+  seoScore: integer('seo_score').default(0).notNull(),
+  readabilityScore: integer('readability_score').default(0).notNull(),
+  styleScore: integer('style_score').default(0).notNull(),
+  overallScore: integer('overall_score').default(0).notNull(),
+  
   // Timestamps
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

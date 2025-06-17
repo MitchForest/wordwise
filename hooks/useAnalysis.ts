@@ -117,7 +117,7 @@ export function useAnalysis(editor: Editor | null, document: any) {
 
       // SEO Analysis with caching
       const seoKey = `seo-${document.id}`;
-      let seoResult = analysisCache.get<SEOAnalysisResult>(seoKey, text);
+      let seoResult = analysisCache.get<SEOAnalysisResult>(seoKey);
       
       if (!seoResult && (document.targetKeyword || document.keywords?.length > 0)) {
         seoResult = seoAnalyzer.current.analyze({
@@ -128,7 +128,7 @@ export function useAnalysis(editor: Editor | null, document: any) {
           targetKeyword: document.targetKeyword || '',
           keywords: document.keywords || [],
         });
-        analysisCache.set(seoKey, seoResult, text);
+        analysisCache.set(seoKey, seoResult);
       }
       
       if (seoResult) {
@@ -183,11 +183,11 @@ export function useAnalysis(editor: Editor | null, document: any) {
 
       // Readability Analysis with caching
       const readabilityKey = `readability-${document.id}`;
-      let readabilityResult = analysisCache.get<ReadabilityResult>(readabilityKey, text);
+      let readabilityResult = analysisCache.get<ReadabilityResult>(readabilityKey);
       
       if (!readabilityResult) {
         readabilityResult = readabilityAnalyzer.current.analyze(text);
-        analysisCache.set(readabilityKey, readabilityResult, text);
+        analysisCache.set(readabilityKey, readabilityResult);
       }
       
       results.readability = readabilityResult;
@@ -246,11 +246,11 @@ export function useAnalysis(editor: Editor | null, document: any) {
 
       // Style Analysis with caching
       const styleKey = `style-${document.id}`;
-      let styleResult = analysisCache.get<StyleResult>(styleKey, text);
+      let styleResult = analysisCache.get<StyleResult>(styleKey);
       
       if (!styleResult) {
         styleResult = styleAnalyzer.current.analyze(text);
-        analysisCache.set(styleKey, styleResult, text);
+        analysisCache.set(styleKey, styleResult);
       }
       
       results.style = styleResult;

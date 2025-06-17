@@ -24,7 +24,7 @@ End the current development session by:
    - What wasn't completed
    - Tips for future developers
 
-4. Empty the `.claude/sessions/.current-session` file (don't remove it, just clear its contents)
+4. Empty the `.claude/.claude/sessions/.current-session` file (don't remove it, just clear its contents)
 5. Inform user the session has been documented
 
 The summary should be thorough enough that another developer (or AI) can understand everything that happened without reading the entire session.

@@ -30,4 +30,17 @@ declare module 'string-similarity' {
     bestMatch: { target: string; rating: number };
     bestMatchIndex: number;
   };
-} 
+}
+
+declare module 'nspell' {
+  export interface Dictionary {
+    correct(word: string): boolean;
+    suggest(word: string): string[];
+    add(word: string): void;
+  }
+  
+  function nspell(dictionary: any): Dictionary;
+  export default nspell;
+}
+
+declare module 'dictionary-en'; 
