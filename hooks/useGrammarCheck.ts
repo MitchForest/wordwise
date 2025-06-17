@@ -23,6 +23,13 @@ export function useGrammarCheck(editor: Editor | null) {
       return;
     }
 
+    // DISABLED: LanguageTool API calls - now handled by useOptimizedAnalysis
+    setErrors([]);
+    if (editor) {
+      clearGrammarErrors(editor);
+    }
+    
+    /*
     setIsChecking(true);
     try {
       const languageTool = new LanguageToolService();
@@ -45,6 +52,7 @@ export function useGrammarCheck(editor: Editor | null) {
     } finally {
       setIsChecking(false);
     }
+    */
   }, 2000); // 2 second debounce
 
   useEffect(() => {

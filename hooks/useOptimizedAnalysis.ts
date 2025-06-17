@@ -79,48 +79,38 @@ export function useOptimizedAnalysis(
     let idCounter = 0;
     
     console.log(`Converting ${tier} results:`, results);
+    console.log(`Current text data mappings:`, currentTextData.mappings);
+    console.log(`Mappings length:`, currentTextData.mappings?.length || 0);
     
     // Convert spelling errors (Local SpellChecker format)
     if (results.spelling && Array.isArray(results.spelling)) {
+      console.log(`Found ${results.spelling.length} spelling errors`);
       results.spelling.forEach((error: any) => {
-        const docStart = plainTextToProseMirrorPosition(error.position, currentTextData.mappings);
-        const docEnd = plainTextToProseMirrorPosition(error.position + error.length, currentTextData.mappings);
-        
-        if (docStart !== -1 && docEnd !== -1) {
-          suggestions.push({
-            id: `${tier}-spelling-${idCounter++}`,
-            category: 'spelling',
-            severity: 'error',
-            title: 'Spelling Error',
-            message: `"${error.word}" appears to be misspelled`,
-            position: {
-              start: docStart,
-              end: docEnd,
-            },
-            context: {
-              text: error.word,
-              length: error.length,
-            },
-            actions: error.suggestions.map((suggestion: string, idx: number) => ({
-              label: suggestion,
-              type: 'fix' as const,
-              primary: idx === 0,
-              value: suggestion,
-              handler: () => {
-                if (!editorRef.current) return;
-                
-                if (isValidProseMirrorRange(editorRef.current, docStart, docEnd)) {
-                  editorRef.current.chain()
-                    .focus()
-                    .setTextSelection({ from: docStart, to: docEnd })
-                    .deleteRange({ from: docStart, to: docEnd })
-                    .insertContent(suggestion)
-                    .run();
-                }
-              }
-            }))
-          });
-        }
+        // For now, just create the suggestion without complex position mapping
+        suggestions.push({
+          id: `${tier}-spelling-${idCounter++}`,
+          category: 'spelling',
+          severity: 'error',
+          title: 'Spelling Error',
+          message: `"${error.word}" appears to be misspelled`,
+          position: {
+            start: error.position,
+            end: error.position + error.length,
+          },
+          context: {
+            text: error.word,
+            length: error.length,
+          },
+          actions: error.suggestions.map((suggestion: string, idx: number) => ({
+            label: suggestion,
+            type: 'fix' as const,
+            primary: idx === 0,
+            value: suggestion,
+            handler: () => {
+              console.log(`Would fix "${error.word}" to "${suggestion}"`);
+            }
+          }))
+        });
       });
     }
     
@@ -321,52 +311,29 @@ export function useOptimizedAnalysis(
     
     // Convert basic grammar issues (new local format)
     if (results.basicGrammar && Array.isArray(results.basicGrammar)) {
+      console.log(`Found ${results.basicGrammar.length} grammar issues`);
       results.basicGrammar.forEach((issue: any) => {
-        const docStart = plainTextToProseMirrorPosition(issue.position, currentTextData.mappings);
-        const docEnd = plainTextToProseMirrorPosition(issue.position + issue.length, currentTextData.mappings);
-        
-        if (docStart !== -1 && docEnd !== -1) {
-          suggestions.push({
-            id: `${tier}-grammar-basic-${idCounter++}`,
-            category: 'grammar',
-            severity: issue.type === 'spacing' ? 'suggestion' : 'warning',
-            title: issue.type === 'capitalization' ? 'Capitalization' : 
-                   issue.type === 'punctuation' ? 'Punctuation' : 'Spacing',
-            message: issue.message,
-            position: {
-              start: docStart,
-              end: docEnd,
-            },
-            actions: issue.suggestions.map((suggestion: string, idx: number) => ({
-              label: suggestion,
-              type: 'fix' as const,
-              primary: idx === 0,
-              value: suggestion,
-              handler: () => {
-                if (!editorRef.current) return;
-                
-                if (isValidProseMirrorRange(editorRef.current, docStart, docEnd)) {
-                  if (issue.length === 0) {
-                    // For insertions (like missing space after punctuation)
-                    editorRef.current.chain()
-                      .focus()
-                      .setTextSelection({ from: docStart, to: docStart })
-                      .insertContent(suggestion)
-                      .run();
-                  } else {
-                    // For replacements
-                    editorRef.current.chain()
-                      .focus()
-                      .setTextSelection({ from: docStart, to: docEnd })
-                      .deleteRange({ from: docStart, to: docEnd })
-                      .insertContent(suggestion)
-                      .run();
-                  }
-                }
-              }
-            }))
-          });
-        }
+        suggestions.push({
+          id: `${tier}-grammar-basic-${idCounter++}`,
+          category: 'grammar',
+          severity: issue.type === 'spacing' ? 'suggestion' : 'warning',
+          title: issue.type === 'capitalization' ? 'Capitalization' : 
+                 issue.type === 'punctuation' ? 'Punctuation' : 'Spacing',
+          message: issue.message,
+          position: {
+            start: issue.position,
+            end: issue.position + issue.length,
+          },
+          actions: issue.suggestions.map((suggestion: string, idx: number) => ({
+            label: suggestion,
+            type: 'fix' as const,
+            primary: idx === 0,
+            value: suggestion,
+            handler: () => {
+              console.log(`Would fix grammar issue: "${suggestion}"`);
+            }
+          }))
+        });
       });
     }
     

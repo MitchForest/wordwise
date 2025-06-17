@@ -104,13 +104,17 @@ The system continues working even if LanguageTool API credits run out, falling b
 - **What it provides**: Estimated time to read the document
 
 ### 6. **SEO Analysis**
-- **Library**: Custom implementation using `keyword-extractor`
+- **Library**: Custom implementation using `keyword-extractor` and `string-similarity`
 - **When**: After pause (3000ms) or manual trigger
 - **What it checks**:
-  - Keyword density
-  - Title optimization
-  - Meta description
-  - Heading structure
+  - Keyword density (target: 1-2%)
+  - Title optimization (50-60 chars, keyword placement)
+  - Meta description (150-160 chars)
+  - Heading structure (H1→H2→H3 hierarchy)
+  - First paragraph keyword usage
+  - Internal/external link balance
+  - Image alt text presence
+  - URL slug optimization
 
 ### 7. **Advanced Grammar** (when available)
 - **Service**: LanguageTool API
@@ -449,6 +453,10 @@ interface AnalysisOptions {
   position?: number;
   useLanguageTool?: boolean;
   targetKeyword?: string;
+  title?: string;
+  metaDescription?: string;
+  slug?: string;
+  content?: any; // TipTap JSON content
 }
 
 interface AnalysisResult {
@@ -561,6 +569,17 @@ export class UnifiedAnalysisEngine {
   ): Promise<{ suggestions: UnifiedSuggestion[]; metrics: DocumentMetrics }> {
     const suggestions = await this.runParagraphChecks(text, options);
     
+    // Run SEO analysis
+    const seoAnalyzer = new SEOAnalyzer();
+    const seoSuggestions = seoAnalyzer.analyze(text, {
+      title: options.title,
+      metaDescription: options.metaDescription,
+      targetKeyword: options.targetKeyword,
+      slug: options.slug,
+      content: options.content
+    });
+    suggestions.push(...seoSuggestions);
+    
     // Calculate all metrics
     const metrics: DocumentMetrics = {
       readability: {
@@ -600,6 +619,9 @@ interface UseUnifiedAnalysisOptions {
   languageToolApiKey?: string;
   enableLanguageTool?: boolean;
   targetKeyword?: string;
+  documentTitle?: string;
+  metaDescription?: string;
+  slug?: string;
 }
 
 export function useUnifiedAnalysis(
@@ -665,6 +687,10 @@ export function useUnifiedAnalysis(
     
     engineRef.current.analyze(text, 'document', {
       targetKeyword: options.targetKeyword,
+      title: options.documentTitle,
+      metaDescription: options.metaDescription,
+      slug: options.slug,
+      content: editor?.getJSON(),
       useLanguageTool: options.enableLanguageTool
     })
       .then(result => {
@@ -786,7 +812,10 @@ export function BlogEditor({ document }: { document: Document }) {
   } = useUnifiedAnalysis(editor, {
     languageToolApiKey: process.env.NEXT_PUBLIC_LANGUAGETOOL_API_KEY,
     enableLanguageTool: true, // Could be a user preference
-    targetKeyword: document.targetKeyword
+    targetKeyword: document.targetKeyword,
+    documentTitle: document.title,
+    metaDescription: document.metaDescription,
+    slug: document.slug
   });
   
   return (
@@ -857,7 +886,7 @@ export function SuggestionsPanel({
 
 ```bash
 # Required packages
-bun add nspell dictionary-en write-good text-readability reading-time keyword-extractor
+bun add nspell dictionary-en write-good text-readability reading-time keyword-extractor string-similarity
 bun add -D @types/text-readability
 ```
 

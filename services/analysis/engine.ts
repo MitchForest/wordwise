@@ -2,7 +2,7 @@ import { LanguageToolService } from '@/services/languagetool';
 import { SEOAnalyzer } from '@/services/analysis/seo';
 import { ReadabilityAnalyzer } from '@/services/analysis/readability';
 import { StyleAnalyzer } from '@/services/analysis/style';
-import { SpellChecker } from '@/services/analysis/spellcheck';
+import { SpellChecker } from '@/services/analysis/spell-check-client';
 import { TypoCorrector } from '@/services/analysis/typos';
 import { BasicGrammarChecker } from '@/services/analysis/basic-grammar';
 import type { Editor } from '@tiptap/react';
@@ -70,6 +70,7 @@ export class AnalysisEngine {
     console.log('[AnalysisEngine] Local spelling results:', spellingResults);
     console.log('[AnalysisEngine] Local typo results:', typoResults);
     console.log('[AnalysisEngine] Local grammar results:', grammarResults);
+    console.log('[AnalysisEngine] Text sample:', text.substring(0, 100));
     
     const result = {
       spelling: spellingResults || [],
