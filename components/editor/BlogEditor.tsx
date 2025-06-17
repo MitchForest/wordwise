@@ -5,6 +5,7 @@ import { EditorContent, EditorContext, useEditor } from '@tiptap/react';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useGrammarCheck } from '@/hooks/useGrammarCheck';
 import { useSession } from '@/lib/auth/client';
+import { useDocumentTitleUpdate } from '@/components/layout/AppLayout';
 import { RightPanel } from '@/components/panels/RightPanel';
 import { DocumentHeader } from './DocumentHeader';
 import { SEOSettings } from './SEOSettings';
@@ -31,7 +32,8 @@ import { Selection } from '@/components/tiptap-extension/selection-extension';
 import { TrailingNode } from '@/components/tiptap-extension/trailing-node-extension';
 import { ImageUploadNode } from '@/components/tiptap-node/image-upload-node/image-upload-node-extension';
 import { EnhancedGrammarDecoration, updateSuggestions } from './extensions/EnhancedGrammarDecoration';
-import { GrammarHoverCard } from './GrammarHoverCard';
+import { EditorStatusBar } from './EditorStatusBar';
+import { useSuggestions } from '@/contexts/SuggestionContext';
 
 // --- UI Primitives ---
 import { Spacer } from '@/components/tiptap-ui-primitive/spacer';
@@ -82,6 +84,8 @@ interface BlogEditorProps {
 
 export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }: BlogEditorProps) {
   const { data: session } = useSession();
+  const { setSuggestions: setContextSuggestions } = useSuggestions();
+  const onDocumentTitleChange = useDocumentTitleUpdate();
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [metaDescription, setMetaDescription] = useState(initialDocument?.metaDescription || '');
   const [author, setAuthor] = useState(initialDocument?.author || session?.user?.name || 'Anonymous');
@@ -89,12 +93,16 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
   const [keywords, setKeywords] = useState<string[]>(initialDocument?.keywords || []);
   const [rightPanelOpen, setRightPanelOpen] = useState(true); // Open by default
   
-  // Hover card state
-  const [hoveredSuggestion, setHoveredSuggestion] = useState<UnifiedSuggestion | null>(null);
-  const [hoveredElement, setHoveredElement] = useState<HTMLElement | null>(null);
-  
   // Store suggestions for decorations
   const [suggestions, setSuggestions] = useState<UnifiedSuggestion[]>([]);
+  
+  // Store scores
+  const [scores, setScores] = useState({
+    overall: 100,
+    grammar: 100,
+    readability: 100,
+    seo: 100,
+  });
   
   const editor = useEditor({
     immediatelyRender: false,
@@ -129,17 +137,16 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
       Link.configure({ openOnClick: false }),
       EnhancedGrammarDecoration.configure({
         suggestions: [], // Will be updated via updateSuggestions
-        onSuggestionHover: (suggestion, element) => {
-          setHoveredSuggestion(suggestion);
-          setHoveredElement(element);
-        },
-        onSuggestionClick: (suggestion, element) => {
-          setHoveredSuggestion(suggestion);
-          setHoveredElement(element);
-        },
-        onApplyFix: (suggestion, fix) => {
-          console.log('Applying fix:', fix);
-          // The fix will be handled by the suggestion's action handler
+        onSuggestionClick: (suggestion) => {
+          // Scroll to suggestion in panel when decoration is clicked
+          const suggestionElement = document.getElementById(`suggestion-${suggestion.id}`);
+          if (suggestionElement) {
+            suggestionElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            suggestionElement.classList.add('ring-2', 'ring-primary');
+            setTimeout(() => {
+              suggestionElement.classList.remove('ring-2', 'ring-primary');
+            }, 2000);
+          }
         },
       }),
     ],
@@ -174,10 +181,11 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
   // Receive suggestions from analysis
   const handleSuggestionsUpdate = useCallback((newSuggestions: UnifiedSuggestion[]) => {
     setSuggestions(newSuggestions);
+    setContextSuggestions(newSuggestions); // Update context
     if (onSuggestionsUpdate) {
       onSuggestionsUpdate(newSuggestions);
     }
-  }, [onSuggestionsUpdate]);
+  }, [onSuggestionsUpdate, setContextSuggestions]);
 
   // Sync title updates
   useEffect(() => {
@@ -204,6 +212,9 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
   const onTitleChange = (newTitle: string) => {
     setTitle(newTitle);
     handleTitleChange(newTitle);
+    if (onDocumentTitleChange) {
+      onDocumentTitleChange(documentId, newTitle);
+    }
   };
 
   // Handle meta description changes
@@ -241,9 +252,9 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
   };
 
   return (
-    <div className="h-full flex bg-gray-50">
+    <div className="h-full flex bg-gray-50 relative">
       {/* Main Editor Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col pb-12"> {/* Add padding bottom for status bar */}
         {/* Document Header */}
         <DocumentHeader
           title={title}
@@ -349,6 +360,7 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
             keywords={keywords}
             editor={editor}
             onSuggestionsUpdate={handleSuggestionsUpdate}
+            onScoresUpdate={setScores}
           />
         )}
       </AnimatePresence>
@@ -366,24 +378,8 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
         </div>
       )}
       
-      {/* Grammar Hover Card */}
-      <GrammarHoverCard
-        suggestion={hoveredSuggestion}
-        targetElement={hoveredElement}
-        onApplyFix={(suggestion, fix) => {
-          // Apply the fix by executing the suggestion's action handler
-          const action = suggestion.actions.find(a => a.label === fix);
-          if (action?.handler) {
-            action.handler();
-            setHoveredSuggestion(null);
-            setHoveredElement(null);
-          }
-        }}
-        onDismiss={() => {
-          setHoveredSuggestion(null);
-          setHoveredElement(null);
-        }}
-      />
+      {/* Fixed Status Bar */}
+      <EditorStatusBar scores={scores} />
     </div>
   );
 } 

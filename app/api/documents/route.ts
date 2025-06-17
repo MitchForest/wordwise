@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { documents } from '@/lib/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,8 +17,11 @@ export async function GET(request: NextRequest) {
     const userDocuments = await db
       .select()
       .from(documents)
-      .where(eq(documents.userId, session.user.id))
-      .orderBy(desc(documents.updatedAt));
+      .where(and(
+        eq(documents.userId, session.user.id),
+        eq(documents.isDeleted, false)
+      ))
+      .orderBy(desc(documents.starred), desc(documents.updatedAt));
     
     return NextResponse.json({ documents: userDocuments });
   } catch (error) {

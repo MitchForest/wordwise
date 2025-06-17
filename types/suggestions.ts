@@ -1,3 +1,11 @@
+export interface SuggestionAction {
+  label: string;
+  type: 'fix' | 'highlight' | 'explain' | 'ignore' | 'navigate';
+  primary?: boolean;
+  value?: string; // The actual fix value for 'fix' type actions
+  handler: () => void | Promise<void>;
+}
+
 export interface UnifiedSuggestion {
   id: string;
   category: 'grammar' | 'readability' | 'seo' | 'style';
@@ -11,6 +19,14 @@ export interface UnifiedSuggestion {
     end: number;
   };
   
+  // Context for the suggestion (text around the error)
+  context?: {
+    text: string; // The actual error text
+    length?: number; // Length of the error
+    before?: string; // Text before the error
+    after?: string; // Text after the error
+  };
+  
   // Related metrics
   metrics?: {
     label: string;
@@ -20,12 +36,7 @@ export interface UnifiedSuggestion {
   };
   
   // Available actions
-  actions: Array<{
-    label: string;
-    type: 'fix' | 'highlight' | 'explain' | 'ignore' | 'navigate';
-    primary?: boolean;
-    handler: () => void | Promise<void>;
-  }>;
+  actions: SuggestionAction[];
   
   // For AI enhancement in Phase 3
   aiActions?: Array<{

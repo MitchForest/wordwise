@@ -8,6 +8,13 @@
       "when": 1750117367795,
       "tag": "0000_swift_old_lace",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1750173682036,
+      "tag": "0001_sour_zarda",
+      "breakpoints": true
     }
   ]
 }

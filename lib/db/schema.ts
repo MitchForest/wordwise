@@ -102,6 +102,9 @@ export const documents = pgTable('documents', {
   styleScore: integer('style_score').default(0).notNull(),
   overallScore: integer('overall_score').default(0).notNull(),
   
+  // Organization fields
+  starred: boolean('starred').default(false).notNull(),
+  
   // Timestamps
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

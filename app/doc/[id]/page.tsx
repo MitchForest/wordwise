@@ -6,6 +6,7 @@ import { useSession } from '@/lib/auth/client';
 import { BlogEditor } from '@/components/editor/BlogEditor';
 import { DocumentRecovery } from '@/components/editor/DocumentRecovery';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { SuggestionProvider } from '@/contexts/SuggestionContext';
 import type { Document } from '@/lib/db/schema';
 
 export default function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -94,27 +95,29 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
 
   return (
     <AppLayout>
-      <DocumentRecovery
-        documentId={documentId}
-        onRecover={(draft) => {
-          if (document) {
-            setDocument({
-              ...document,
-              title: draft.title || document.title,
-              metaDescription: draft.metaDescription || document.metaDescription,
-              content: draft.content || document.content,
-            });
-          }
-        }}
-        onDiscard={() => {}}
-      />
-      
-      <div className="h-full">
-        <BlogEditor 
+      <SuggestionProvider>
+        <DocumentRecovery
           documentId={documentId}
-          initialDocument={editorDocument}
+          onRecover={(draft) => {
+            if (document) {
+              setDocument({
+                ...document,
+                title: draft.title || document.title,
+                metaDescription: draft.metaDescription || document.metaDescription,
+                content: draft.content || document.content,
+              });
+            }
+          }}
+          onDiscard={() => {}}
         />
-      </div>
+        
+        <div className="h-full">
+          <BlogEditor 
+            documentId={documentId}
+            initialDocument={editorDocument}
+          />
+        </div>
+      </SuggestionProvider>
     </AppLayout>
   );
 } 

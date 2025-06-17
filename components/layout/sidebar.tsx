@@ -14,7 +14,10 @@ import {
   Sparkles,
   Settings,
   LogOut,
-  ChevronUp
+  ChevronUp,
+  Star,
+  Trash2,
+  Edit2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -25,9 +28,10 @@ import type { Document } from '@/lib/db/schema';
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  onDocumentTitleChange?: (documentId: string, newTitle: string) => void;
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, onDocumentTitleChange }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -64,14 +68,103 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     }
   };
 
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        // Remove from local state
+        setDocuments(prev => prev.filter(doc => doc.id !== documentId));
+        
+        // If we're currently viewing the deleted document, redirect to home
+        if (pathname === `/doc/${documentId}`) {
+          router.push('/');
+        }
+      } else {
+        console.error('Failed to delete document');
+        alert('Failed to delete document. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      alert('Failed to delete document. Please try again.');
+    }
+  };
+
+  const handleStarDocument = async (documentId: string, starred: boolean) => {
+    try {
+      const response = await fetch(`/api/documents/${documentId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ starred }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        setDocuments(prev => 
+          prev.map(doc => 
+            doc.id === documentId 
+              ? { ...doc, starred } 
+              : doc
+          )
+        );
+      } else {
+        console.error('Failed to update document star status');
+      }
+    } catch (error) {
+      console.error('Error updating document star status:', error);
+    }
+  };
+
+  const handleRenameDocument = async (documentId: string, newTitle: string) => {
+    if (!newTitle.trim()) {
+      newTitle = 'Untitled Document';
+    }
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: newTitle }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        setDocuments(prev => 
+          prev.map(doc => 
+            doc.id === documentId 
+              ? { ...doc, title: newTitle } 
+              : doc
+          )
+        );
+
+        // Notify parent component if callback provided
+        if (onDocumentTitleChange) {
+          onDocumentTitleChange(documentId, newTitle);
+        }
+      } else {
+        console.error('Failed to rename document');
+      }
+    } catch (error) {
+      console.error('Error renaming document:', error);
+    }
+  };
+
   const filteredDocs = documents.filter(doc =>
     doc.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Sort: by updated date
-  const sortedDocs = [...filteredDocs].sort((a, b) => {
-    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-  });
+  // Documents are already sorted by the API (starred first, then by updatedAt)
+  const sortedDocs = filteredDocs;
 
   const handleSignOut = async () => {
     try {
@@ -195,6 +288,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   onNavigate={() => router.push(`/doc/${doc.id}`)}
                   openMenuId={openMenuId}
                   setOpenMenuId={setOpenMenuId}
+                  onDelete={handleDeleteDocument}
+                  onStar={handleStarDocument}
+                  onRename={handleRenameDocument}
                 />
               ))}
             </AnimatePresence>
@@ -226,7 +322,10 @@ function DocumentItem({
   isActive,
   onNavigate,
   openMenuId,
-  setOpenMenuId
+  setOpenMenuId,
+  onDelete,
+  onStar,
+  onRename
 }: { 
   document: Document;
   collapsed: boolean;
@@ -234,6 +333,9 @@ function DocumentItem({
   onNavigate: () => void;
   openMenuId: string | null;
   setOpenMenuId: (id: string | null) => void;
+  onDelete: (id: string) => void;
+  onStar: (id: string, starred: boolean) => void;
+  onRename: (id: string, title: string) => void;
 }) {
   const showMenu = openMenuId === document.id;
   const [isEditing, setIsEditing] = useState(false);
@@ -241,6 +343,11 @@ function DocumentItem({
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+
+  // Update title when document prop changes
+  useEffect(() => {
+    setTitle(document.title);
+  }, [document.title]);
 
   // Close menu when navigating to different document
   const handleNavigate = () => {
@@ -260,11 +367,22 @@ function DocumentItem({
         const rect = buttonRef.current.getBoundingClientRect();
         setMenuPosition({
           top: rect.bottom + 4,
-          left: rect.right - 120 // 120px is min-width of menu
+          left: rect.right - 160 // Adjusted for wider menu
         });
       }
       setOpenMenuId(document.id);
     }
+  };
+
+  const handleStarClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onStar(document.id, !document.starred);
+  };
+
+  const handleRenameSubmit = () => {
+    const newTitle = title.trim() || 'Untitled Document';
+    onRename(document.id, newTitle);
+    setIsEditing(false);
   };
 
   // Close menu when clicking outside or on escape
@@ -318,9 +436,14 @@ function DocumentItem({
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                onBlur={() => setIsEditing(false)}
-                onKeyPress={(e) => {
+                onBlur={handleRenameSubmit}
+                onKeyDown={(e) => {
                   if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleRenameSubmit();
+                  }
+                  if (e.key === 'Escape') {
+                    setTitle(document.title);
                     setIsEditing(false);
                   }
                 }}
@@ -330,10 +453,15 @@ function DocumentItem({
               />
             ) : (
               <div>
-                <p className={cn(
-                  "text-sm truncate",
-                  isActive ? "text-blue-900 font-medium" : "text-neutral-700"
-                )}>{title}</p>
+                <div className="flex items-center gap-1">
+                  <p className={cn(
+                    "text-sm truncate",
+                    isActive ? "text-blue-900 font-medium" : "text-neutral-700"
+                  )}>{title}</p>
+                  {document.starred && (
+                    <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 flex-shrink-0" />
+                  )}
+                </div>
                 <p className="text-xs text-gray-500">
                   {new Date(document.updatedAt).toLocaleDateString()}
                 </p>
@@ -343,6 +471,18 @@ function DocumentItem({
 
           {/* Actions */}
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={handleStarClick}
+              className="p-1 hover:bg-neutral-100 rounded transition-colors"
+              title={document.starred ? "Remove from favorites" : "Add to favorites"}
+            >
+              <Star className={cn(
+                "h-3 w-3",
+                document.starred 
+                  ? "text-yellow-500 fill-yellow-500" 
+                  : "text-neutral-400"
+              )} />
+            </button>
             <div className="relative">
               <button
                 ref={buttonRef}
@@ -358,8 +498,9 @@ function DocumentItem({
 
       {/* Tooltip for collapsed state */}
       {collapsed && (
-        <div className="absolute left-16 bg-neutral-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+        <div className="absolute left-16 bg-neutral-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 flex items-center gap-1">
           {document.title}
+          {document.starred && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />}
         </div>
       )}
 
@@ -371,7 +512,7 @@ function DocumentItem({
             initial={{ opacity: 0, scale: 0.95, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -10 }}
-            className="fixed rounded-lg shadow-xl border border-neutral-200 py-1 min-w-[120px]"
+            className="fixed rounded-lg shadow-xl border border-neutral-200 py-1 min-w-[160px]"
             style={{ 
               backgroundColor: '#ffffff',
               top: menuPosition.top,
@@ -383,20 +524,39 @@ function DocumentItem({
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                onStar(document.id, !document.starred);
+                setOpenMenuId(null);
+              }}
+              className="px-3 py-1.5 text-sm hover:bg-neutral-50 w-full text-left transition-colors flex items-center gap-2"
+            >
+              <Star className={cn(
+                "h-4 w-4",
+                document.starred 
+                  ? "text-yellow-500 fill-yellow-500" 
+                  : "text-neutral-400"
+              )} />
+              {document.starred ? 'Remove Star' : 'Add Star'}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
                 setIsEditing(true);
                 setOpenMenuId(null);
               }}
-              className="px-3 py-1.5 text-sm hover:bg-neutral-50 w-full text-left transition-colors block"
+              className="px-3 py-1.5 text-sm hover:bg-neutral-50 w-full text-left transition-colors flex items-center gap-2"
             >
+              <Edit2 className="h-4 w-4 text-neutral-400" />
               Rename
             </button>
             <button
-              onClick={() => {
-                // Delete logic here
+              onClick={(e) => {
+                e.stopPropagation();
                 setOpenMenuId(null);
+                onDelete(document.id);
               }}
-              className="px-3 py-1.5 text-sm hover:bg-red-50 w-full text-left text-red-600 transition-colors block"
+              className="px-3 py-1.5 text-sm hover:bg-red-50 w-full text-left text-red-600 transition-colors flex items-center gap-2"
             >
+              <Trash2 className="h-4 w-4" />
               Delete
             </button>
           </motion.div>

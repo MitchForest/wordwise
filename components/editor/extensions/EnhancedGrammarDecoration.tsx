@@ -1,13 +1,12 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import type { Editor } from '@tiptap/core';
 import type { UnifiedSuggestion } from '@/types/suggestions';
 
 interface GrammarDecorationOptions {
   suggestions: UnifiedSuggestion[];
-  onSuggestionHover: (suggestion: UnifiedSuggestion | null, element: HTMLElement | null) => void;
-  onSuggestionClick: (suggestion: UnifiedSuggestion, element: HTMLElement) => void;
-  onApplyFix: (suggestion: UnifiedSuggestion, fix: string) => void;
+  onSuggestionClick?: (suggestion: UnifiedSuggestion) => void;
 }
 
 export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptions>({
@@ -16,9 +15,7 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
   addOptions() {
     return {
       suggestions: [],
-      onSuggestionHover: () => {},
       onSuggestionClick: () => {},
-      onApplyFix: () => {},
     };
   },
   
@@ -94,43 +91,19 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
           },
           
           handleDOMEvents: {
-            mouseenter: (view, event) => {
-              const target = event.target as HTMLElement;
-              if (target.classList.contains('grammar-decoration')) {
-                const suggestionId = target.getAttribute('data-suggestion-id');
-                const pluginState = pluginKey.getState(view.state);
-                const suggestion = pluginState?.suggestions?.find((s: UnifiedSuggestion) => s.id === suggestionId);
-                
-                if (suggestion) {
-                  options.onSuggestionHover(suggestion, target);
-                }
-              }
-              return false;
-            },
-            
-            mouseleave: (_view, event) => {
-              const target = event.target as HTMLElement;
-              const relatedTarget = event.relatedTarget as HTMLElement;
-              
-              // Don't hide hover card if moving to the hover card itself
-              if (target.classList.contains('grammar-decoration') && 
-                  !relatedTarget?.closest('.grammar-hover-card')) {
-                options.onSuggestionHover(null, null);
-              }
-              return false;
-            },
-            
             click: (view, event) => {
               const target = event.target as HTMLElement;
               if (target.classList.contains('grammar-decoration')) {
                 const suggestionId = target.getAttribute('data-suggestion-id');
                 const pluginState = pluginKey.getState(view.state);
-                const suggestion = pluginState?.suggestions?.find((s: UnifiedSuggestion) => s.id === suggestionId);
+                const suggestion = pluginState?.suggestions.find(
+                  (s: UnifiedSuggestion) => s.id === suggestionId
+                );
                 
-                if (suggestion) {
-                  options.onSuggestionClick(suggestion, target);
+                if (suggestion && options.onSuggestionClick) {
+                  options.onSuggestionClick(suggestion);
+                  return true;
                 }
-                return true;
               }
               return false;
             },
@@ -141,32 +114,31 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
   },
 });
 
-// Helper function for decoration class
+// Helper function to update suggestions
+export function updateSuggestions(editor: Editor, suggestions: UnifiedSuggestion[]) {
+  editor.chain()
+    .command(({ tr }) => {
+      tr.setMeta('updateSuggestions', { suggestions });
+      return true;
+    })
+    .run();
+}
+
+// Helper function to clear suggestions
+export function clearSuggestions(editor: Editor) {
+  editor.chain()
+    .command(({ tr }) => {
+      tr.setMeta('clearSuggestions', true);
+      return true;
+    })
+    .run();
+}
+
+// Get decoration class based on severity and category
 function getDecorationClass(suggestion: UnifiedSuggestion): string {
   const baseClass = 'grammar-decoration';
   const severityClass = `grammar-${suggestion.severity}`;
-  const categoryClass = `grammar-category-${suggestion.category}`;
+  const categoryClass = `grammar-${suggestion.category}`;
   
   return `${baseClass} ${severityClass} ${categoryClass}`;
 }
-
-// Helper to update suggestions
-export function updateSuggestions(editor: Editor, suggestions: UnifiedSuggestion[]) {
-  if (!editor) return;
-  
-  const { tr } = editor.state;
-  tr.setMeta('updateSuggestions', { suggestions });
-  editor.view.dispatch(tr);
-}
-
-// Helper to clear suggestions
-export function clearSuggestions(editor: Editor) {
-  if (!editor) return;
-  
-  const { tr } = editor.state;
-  tr.setMeta('clearSuggestions', true);
-  editor.view.dispatch(tr);
-}
-
-// Import Editor type
-import type { Editor } from '@tiptap/core';

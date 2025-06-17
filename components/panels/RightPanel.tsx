@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { SuggestionsPanel } from './SuggestionsPanel';
+import { EnhancedSuggestionsPanel } from './EnhancedSuggestionsPanel';
 import { AIChatPanel } from './AIChatPanel';
 import { motion } from 'framer-motion';
 import { useOptimizedAnalysis } from '@/hooks/useOptimizedAnalysis';
@@ -18,6 +18,12 @@ interface RightPanelProps {
   keywords?: string[];
   editor: Editor | null;
   onSuggestionsUpdate?: (suggestions: UnifiedSuggestion[]) => void;
+  onScoresUpdate?: (scores: {
+    overall: number;
+    grammar: number;
+    readability: number;
+    seo: number;
+  }) => void;
 }
 
 export function RightPanel({ 
@@ -28,7 +34,8 @@ export function RightPanel({
   targetKeyword,
   keywords,
   editor,
-  onSuggestionsUpdate
+  onSuggestionsUpdate,
+  onScoresUpdate
 }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState('suggestions');
 
@@ -42,7 +49,7 @@ export function RightPanel({
   }), [documentId, title, metaDescription, targetKeyword, keywords]);
 
   // Use the optimized analysis hook with three-tier system
-  const { suggestions, scores, isAnalyzing } = useOptimizedAnalysis(editor, document);
+  const { suggestions, scores } = useOptimizedAnalysis(editor, document);
   
   console.log('RightPanel suggestions:', suggestions);
   
@@ -52,12 +59,14 @@ export function RightPanel({
       onSuggestionsUpdate(suggestions);
     }
   }, [suggestions, onSuggestionsUpdate]);
+  
+  // Call onScoresUpdate when scores change
+  useEffect(() => {
+    if (onScoresUpdate) {
+      onScoresUpdate(scores);
+    }
+  }, [scores, onScoresUpdate]);
 
-  // Handle applying suggestions
-  const handleApplySuggestion = async (_suggestion: UnifiedSuggestion, action: UnifiedSuggestion['actions'][0]) => {
-    await action.handler();
-    // The handler should update the editor directly
-  };
 
   // Create document object for AI chat - also memoized
   const documentForAI = useMemo(() => ({
@@ -91,11 +100,9 @@ export function RightPanel({
         </TabsList>
         
         <TabsContent value="suggestions" className="flex-1 m-0">
-          <SuggestionsPanel 
-            suggestions={suggestions}
-            scores={scores}
-            isAnalyzing={isAnalyzing}
-            onApplySuggestion={handleApplySuggestion}
+          <EnhancedSuggestionsPanel 
+            editor={editor}
+            className="h-full"
           />
         </TabsContent>
         
