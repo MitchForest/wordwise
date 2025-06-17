@@ -94,8 +94,8 @@ export function useOptimizedAnalysis(
           title: 'Spelling Error',
           message: `"${error.word}" appears to be misspelled`,
           position: {
-            start: error.position,
-            end: error.position + error.length,
+            start: error.position + 1, // +1 for ProseMirror's 1-based indexing
+            end: error.position + error.length + 1,
           },
           context: {
             text: error.word,
@@ -107,7 +107,19 @@ export function useOptimizedAnalysis(
             primary: idx === 0,
             value: suggestion,
             handler: () => {
-              console.log(`Would fix "${error.word}" to "${suggestion}"`);
+              if (!editorRef.current) return;
+              
+              // Apply the fix directly using the position we already have
+              const start = error.position + 1;
+              const end = error.position + error.length + 1;
+              
+              if (isValidProseMirrorRange(editorRef.current, start, end)) {
+                editorRef.current.chain()
+                  .focus()
+                  .setTextSelection({ from: start, to: end })
+                  .insertContent(suggestion)
+                  .run();
+              }
             }
           }))
         });
@@ -321,8 +333,8 @@ export function useOptimizedAnalysis(
                  issue.type === 'punctuation' ? 'Punctuation' : 'Spacing',
           message: issue.message,
           position: {
-            start: issue.position,
-            end: issue.position + issue.length,
+            start: issue.position + 1, // +1 for ProseMirror's 1-based indexing
+            end: issue.position + issue.length + 1,
           },
           actions: issue.suggestions.map((suggestion: string, idx: number) => ({
             label: suggestion,
@@ -330,7 +342,19 @@ export function useOptimizedAnalysis(
             primary: idx === 0,
             value: suggestion,
             handler: () => {
-              console.log(`Would fix grammar issue: "${suggestion}"`);
+              if (!editorRef.current) return;
+              
+              // Apply the fix directly using the position we already have
+              const start = issue.position + 1;
+              const end = issue.position + issue.length + 1;
+              
+              if (isValidProseMirrorRange(editorRef.current, start, end)) {
+                editorRef.current.chain()
+                  .focus()
+                  .setTextSelection({ from: start, to: end })
+                  .insertContent(suggestion)
+                  .run();
+              }
             }
           }))
         });

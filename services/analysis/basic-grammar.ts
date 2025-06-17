@@ -93,21 +93,8 @@ export class BasicGrammarChecker {
       });
     }
     
-    // Check for missing period at end of text (if it looks like a sentence)
-    const trimmedText = text.trim();
-    if (trimmedText.length > 10 && /[a-zA-Z]$/.test(trimmedText)) {
-      const lastChar = trimmedText[trimmedText.length - 1];
-      if (!/[.!?]/.test(lastChar)) {
-        issues.push({
-          type: 'punctuation',
-          position: text.lastIndexOf(lastChar),
-          length: 1,
-          message: `Consider adding a period at the end of the sentence`,
-          suggestions: [lastChar + '.'],
-          autoApplicable: false
-        });
-      }
-    }
+    // Don't check for missing period - too aggressive and annoying
+    // Users know when they're done with a sentence
     
     // Check for space before punctuation (except ellipsis)
     const spacePunctuationPattern = /\s+([.!?,;:])/g;
@@ -157,8 +144,8 @@ export class BasicGrammarChecker {
       
       issues.push({
         type: 'spacing',
-        position: match.index + 1,
-        length: 0,
+        position: match.index,
+        length: 2, // Include punctuation and following letter
         message: `Add space after punctuation`,
         suggestions: [match[1] + ' ' + match[2]],
         autoApplicable: true

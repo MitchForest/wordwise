@@ -80,6 +80,12 @@ export class SpellChecker {
   
   async check(text: string): Promise<SpellCheckResult[]> {
     const results: SpellCheckResult[] = [];
+    
+    // First, check for split words (e.g., "Wha tdo")
+    const splitWordResults = this.checkSplitWords(text);
+    results.push(...splitWordResults);
+    
+    // Then check individual words
     const wordRegex = /\b[a-zA-Z]+(?:'[a-zA-Z]+)?\b/g;
     let match;
     
@@ -173,6 +179,102 @@ export class SpellChecker {
     }
     
     return suggestions;
+  }
+  
+  private checkSplitWords(text: string): SpellCheckResult[] {
+    const results: SpellCheckResult[] = [];
+    
+    // Common words that might be accidentally split
+    const commonSplitWords = new Map([
+      ['wha t', 'what'],
+      ['tha t', 'that'],
+      ['thi s', 'this'],
+      ['wit h', 'with'],
+      ['fro m', 'from'],
+      ['hav e', 'have'],
+      ['som e', 'some'],
+      ['lik e', 'like'],
+      ['whe n', 'when'],
+      ['whe re', 'where'],
+      ['the re', 'there'],
+      ['the y', 'they'],
+      ['the ir', 'their'],
+      ['wou ld', 'would'],
+      ['cou ld', 'could'],
+      ['sho uld', 'should'],
+      ['abo ut', 'about'],
+      ['beca use', 'because'],
+      ['befo re', 'before'],
+      ['afte r', 'after'],
+    ]);
+    
+    // Look for patterns like "Wha tdo" or "wha t do"
+    const splitPattern = /\b([a-zA-Z]{2,3})\s+([a-zA-Z]{1,4})\b/g;
+    let match;
+    
+    while ((match = splitPattern.exec(text)) !== null) {
+      const combined = (match[1] + match[2]).toLowerCase();
+      const withSpace = (match[1] + ' ' + match[2]).toLowerCase();
+      
+      // Check if the split version matches a known split
+      if (commonSplitWords.has(withSpace)) {
+        const suggestion = commonSplitWords.get(withSpace)!;
+        
+        // Preserve capitalization
+        let fixedSuggestion = suggestion;
+        if (match[1][0] === match[1][0].toUpperCase()) {
+          fixedSuggestion = suggestion.charAt(0).toUpperCase() + suggestion.slice(1);
+        }
+        
+        results.push({
+          word: match[0],
+          position: match.index,
+          length: match[0].length,
+          suggestions: [fixedSuggestion],
+          type: 'spelling'
+        });
+      }
+      // Check if combining would make a valid word
+      else if (this.isValidWord(combined)) {
+        let suggestion = combined;
+        
+        // Preserve capitalization
+        if (match[1][0] === match[1][0].toUpperCase()) {
+          suggestion = combined.charAt(0).toUpperCase() + combined.slice(1);
+        }
+        
+        results.push({
+          word: match[0],
+          position: match.index,
+          length: match[0].length,
+          suggestions: [suggestion],
+          type: 'spelling'
+        });
+      }
+    }
+    
+    return results;
+  }
+  
+  private isValidWord(word: string): boolean {
+    // Check if it's a custom word
+    if (this.customWords.has(word.toLowerCase())) return true;
+    
+    // Check against common English words
+    const commonWords = new Set([
+      'what', 'that', 'this', 'with', 'from', 'have', 'some', 'like',
+      'when', 'where', 'there', 'they', 'their', 'would', 'could', 'should',
+      'about', 'because', 'before', 'after', 'think', 'know', 'want', 'need',
+      'make', 'take', 'give', 'find', 'tell', 'call', 'good', 'first',
+      'last', 'long', 'great', 'little', 'other', 'right', 'high', 'different',
+      'small', 'large', 'next', 'early', 'young', 'important', 'public',
+      'person', 'year', 'week', 'company', 'system', 'program', 'question',
+      'work', 'government', 'number', 'night', 'point', 'home', 'water',
+      'room', 'mother', 'area', 'money', 'story', 'fact', 'month', 'book',
+      'house', 'problem', 'information', 'power', 'country', 'change', 'interest'
+    ]);
+    
+    return commonWords.has(word.toLowerCase());
   }
   
   private isCamelCase(word: string): boolean {
