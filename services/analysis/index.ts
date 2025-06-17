@@ -1,5 +1,4 @@
-export { AnalysisEngine } from './engine';
-export { SpellChecker } from './spellcheck';
+export { UnifiedAnalysisEngine } from './engine';
 export { TypoCorrector } from './typos';
 export { AnalysisCache } from './cache';
 export { SEOAnalyzer } from './seo';

@@ -72,3 +72,15 @@ body {
     padding: 1rem 1.5rem;
   }
 }
+
+.grammar-decoration {
+  &.grammar-spelling {
+    text-decoration: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: theme('colors.red.500');
+  }
+
+  &.grammar-style {
+    text-decoration: underline;
+  }
+}

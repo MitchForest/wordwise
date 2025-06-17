@@ -1,17 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { EditorContent, EditorContext, useEditor } from '@tiptap/react';
 import { useAutoSave } from '@/hooks/useAutoSave';
-import { useGrammarCheck } from '@/hooks/useGrammarCheck';
 import { useSession } from '@/lib/auth/client';
 import { useDocumentTitleUpdate, useDocumentUpdates } from '@/components/layout/AppLayout';
 import { RightPanel } from '@/components/panels/RightPanel';
 import { DocumentHeader } from './DocumentHeader';
 import { SEOSettings } from './SEOSettings';
-import { GrammarContextMenu } from './GrammarContextMenu';
 import type { JSONContent } from '@tiptap/react';
-import type { UnifiedSuggestion } from '@/types/suggestions';
 import { AnimatePresence } from 'framer-motion';
 
 // --- Tiptap Core Extensions ---
@@ -31,8 +28,12 @@ import { Link } from '@/components/tiptap-extension/link-extension';
 import { Selection } from '@/components/tiptap-extension/selection-extension';
 import { TrailingNode } from '@/components/tiptap-extension/trailing-node-extension';
 import { ImageUploadNode } from '@/components/tiptap-node/image-upload-node/image-upload-node-extension';
-import { EnhancedGrammarDecoration, updateSuggestions } from './extensions/EnhancedGrammarDecoration';
+import { EnhancedGrammarDecoration } from './extensions/EnhancedGrammarDecoration';
 import { EditorStatusBar } from './EditorStatusBar';
+import { useUnifiedAnalysis } from '@/hooks/useUnifiedAnalysis';
+import {
+  updateSuggestions,
+} from './extensions/EnhancedGrammarDecoration';
 import { useSuggestions } from '@/contexts/SuggestionContext';
 
 // --- UI Primitives ---
@@ -79,32 +80,20 @@ interface BlogEditorProps {
     content?: JSONContent;
     targetKeyword?: string;
   };
-  onSuggestionsUpdate?: (suggestions: UnifiedSuggestion[]) => void;
 }
 
-export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }: BlogEditorProps) {
+export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const { data: session } = useSession();
-  const { setSuggestions: setContextSuggestions } = useSuggestions();
   const onDocumentTitleChange = useDocumentTitleUpdate();
   const documentUpdates = useDocumentUpdates();
+  const { suggestions, registerEditorActions } = useSuggestions();
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [metaDescription, setMetaDescription] = useState(initialDocument?.metaDescription || '');
   const [author, setAuthor] = useState(initialDocument?.author || session?.user?.name || 'Anonymous');
   const [targetKeyword, setTargetKeyword] = useState(initialDocument?.targetKeyword || '');
   const [keywords, setKeywords] = useState<string[]>(initialDocument?.keywords || []);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true); // Open by default
-  
-  // Store suggestions for decorations
-  const [suggestions, setSuggestions] = useState<UnifiedSuggestion[]>([]);
-  
-  // Store scores
-  const [scores, setScores] = useState({
-    overall: 100,
-    grammar: 100,
-    readability: 100,
-    seo: 100,
-  });
-  
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+
   const editor = useEditor({
     immediatelyRender: false,
     editorProps: {
@@ -137,9 +126,7 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
       TrailingNode,
       Link.configure({ openOnClick: false }),
       EnhancedGrammarDecoration.configure({
-        suggestions: [], // Will be updated via updateSuggestions
         onSuggestionClick: (suggestion) => {
-          // Scroll to suggestion in panel when decoration is clicked
           const suggestionElement = document.getElementById(`suggestion-${suggestion.id}`);
           if (suggestionElement) {
             suggestionElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -154,40 +141,31 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
     content: initialDocument?.content || '',
   });
 
-  const { 
-    saveState,
-    lastSaved, 
-    handleContentChange, 
-    handleTitleChange, 
-    handleMetaChange 
-  } = useAutoSave(editor, documentId);
-
-  // Just run grammar check for decorations - analysis is handled by useAnalysis in RightPanel
-  const { contextMenuError, applyFix, hideContextMenu } = useGrammarCheck(editor);
-
-  // Update save state based on auto-save
+  // Register the editor's "apply" action with the context
   useEffect(() => {
-    if (lastSaved) {
-      // saveState is now managed by useAutoSave hook
+    if (editor && registerEditorActions) {
+      registerEditorActions({
+        apply: (suggestionId, value) => {
+          const suggestion = suggestions.find(s => s.id === suggestionId);
+          if (suggestion?.position) {
+            const { start, end } = suggestion.position;
+            editor.chain().focus().insertContentAt({ from: start, to: end }, value).run();
+          }
+        },
+      });
     }
-  }, [lastSaved]);
-  
-  // Update decorations when suggestions change
+  }, [editor, registerEditorActions, suggestions]);
+
+  const { saveState, lastSaved, handleContentChange, handleTitleChange, handleMetaChange } = useAutoSave(editor, documentId);
+
+  // Call our new analysis hook
+  useUnifiedAnalysis(editor?.state.doc, editor?.isEditable || false);
+
   useEffect(() => {
-    if (editor && suggestions.length > 0) {
+    if (editor) {
       updateSuggestions(editor, suggestions);
     }
-  }, [editor, suggestions]);
-  
-  // Receive suggestions from analysis
-  const handleSuggestionsUpdate = useCallback((newSuggestions: UnifiedSuggestion[]) => {
-    console.log('[BlogEditor] handleSuggestionsUpdate called with:', newSuggestions);
-    setSuggestions(newSuggestions);
-    setContextSuggestions(newSuggestions); // Update context
-    if (onSuggestionsUpdate) {
-      onSuggestionsUpdate(newSuggestions);
-    }
-  }, [onSuggestionsUpdate, setContextSuggestions]);
+  }, [suggestions, editor]);
 
   // Sync title updates from initial document
   useEffect(() => {
@@ -362,7 +340,7 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
         </div>
         
         {/* Fixed Status Bar - Only for editor area */}
-        <EditorStatusBar scores={scores} />
+        <EditorStatusBar />
       </div>
 
       {/* Right Panel */}
@@ -376,24 +354,9 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
             targetKeyword={targetKeyword}
             keywords={keywords}
             editor={editor}
-            onSuggestionsUpdate={handleSuggestionsUpdate}
-            onScoresUpdate={setScores}
           />
         )}
       </AnimatePresence>
-      
-      {/* Grammar Context Menu */}
-      {contextMenuError && (
-        <div className="grammar-context-menu">
-          <GrammarContextMenu
-            error={contextMenuError.error}
-            position={contextMenuError.position}
-            onApplyFix={(replacement) => applyFix(contextMenuError.error.id, replacement)}
-            onIgnore={hideContextMenu}
-            onAddToDictionary={hideContextMenu}
-          />
-        </div>
-      )}
       
     </div>
   );

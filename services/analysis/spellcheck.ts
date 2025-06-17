@@ -1,3 +1,6 @@
+// Using 'any' for the instance type to avoid all import issues.
+type NspellInstance = any;
+
 export interface SpellCheckResult {
   word: string;
   position: number;
@@ -6,146 +9,88 @@ export interface SpellCheckResult {
   type: 'spelling';
 }
 
-export class SpellChecker {
-  private cache: Map<string, { correct: boolean; suggestions: string[] }> = new Map();
-  private customWords: Set<string> = new Set([
-    'api', 'url', 'json', 'css', 'html', 'javascript', 'typescript',
-    'react', 'nextjs', 'nodejs', 'npm', 'git', 'github', 'gitlab',
-    'frontend', 'backend', 'fullstack', 'ui', 'ux', 'seo', 'cms',
-    'wordpress', 'blog', 'blogging', 'async', 'await', 'const', 'let'
-  ]);
-  
-  async init(): Promise<void> {
-    // No initialization needed for API-based approach
+class SpellCheckerService {
+  private spell: NspellInstance | null = null;
+  private initPromise: Promise<void> | null = null;
+  private customWords = new Set<string>();
+
+  async initialize(): Promise<void> {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    this.initPromise = this._initialize();
+    return this.initPromise;
   }
-  
-  addCustomWords(words: string[]): void {
-    words.forEach(word => {
-      this.customWords.add(word.toLowerCase());
-      // Also add capitalized version
-      const capitalized = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-      this.customWords.add(capitalized);
-    });
-  }
-  
-  async check(text: string): Promise<SpellCheckResult[]> {
-    await this.init();
-    
-    const results: SpellCheckResult[] = [];
-    const wordRegex = /\b[a-zA-Z]+(?:'[a-zA-Z]+)?\b/g;
-    const words: Array<{ word: string; position: number }> = [];
-    let match;
-    
-    // Extract all words with positions
-    while ((match = wordRegex.exec(text)) !== null) {
-      const word = match[0];
-      const position = match.index;
+
+  private async _initialize(): Promise<void> {
+    try {
+      // Dynamic import for nspell
+      const { default: nspell } = await import('nspell');
       
-      // Skip if word is too short or is a number
-      if (word.length <= 2 || /^\d+$/.test(word)) continue;
+      // Fetch dictionary from CDN to bypass Webpack's module resolution
+      const dictionaryResponse = await fetch('https://unpkg.com/dictionary-en@4.0.0/index.dic');
+      const dictionaryText = await dictionaryResponse.text();
+      const affResponse = await fetch('https://unpkg.com/dictionary-en@4.0.0/index.aff');
+      const affText = await affResponse.text();
       
-      words.push({ word, position });
+      const dictionary = {
+        dic: dictionaryText,
+        aff: affText
+      };
+
+      this.spell = nspell(dictionary);
+
+      const customWords = [
+        'blog', 'blogging', 'blogger', 'SEO', 'SERP', 'CMS', 'API',
+        'URL', 'URLs', 'UI', 'UX', 'metadata', 'permalink',
+        'TipTap', 'WordWise', 'Next.js'
+      ];
+      customWords.forEach(word => {
+        this.spell!.add(word);
+        this.customWords.add(word.toLowerCase());
+      });
+      console.log('SpellChecker initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize spell checker:', error);
+      this.initPromise = null;
+      throw error;
     }
-    
-    // Check all words in batch
-    const wordList = words.map(w => w.word);
-    const checkedWords = await this.checkWords(wordList);
-    
-    // Build results
-    for (const { word, position } of words) {
-      const result = checkedWords.get(word);
-      if (result && !result.correct) {
-        results.push({
-          word,
-          position,
-          length: word.length,
-          suggestions: result.suggestions,
-          type: 'spelling'
-        });
-      }
-    }
-    
-    return results;
   }
-  
-  private async checkWords(words: string[]): Promise<Map<string, { correct: boolean; suggestions: string[] }>> {
-    const results = new Map<string, { correct: boolean; suggestions: string[] }>();
-    
-    // Check cache first
-    const uncachedWords: string[] = [];
-    for (const word of words) {
-      if (this.cache.has(word)) {
-        results.set(word, this.cache.get(word)!);
-      } else if (this.isLocallyCorrect(word)) {
-        const result = { correct: true, suggestions: [] };
-        results.set(word, result);
-        this.cache.set(word, result);
-      } else {
-        uncachedWords.push(word);
-      }
-    }
-    
-    // Check uncached words via API
-    if (uncachedWords.length > 0) {
-      try {
-        const response = await fetch('/api/spellcheck', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ words: uncachedWords })
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          for (const [word, result] of Object.entries(data.results)) {
-            results.set(word, result as { correct: boolean; suggestions: string[] });
-            this.cache.set(word, result as { correct: boolean; suggestions: string[] });
-          }
-        }
-      } catch (error) {
-        console.error('Spellcheck API error:', error);
-        // Fallback: mark as correct to avoid false positives
-        for (const word of uncachedWords) {
-          results.set(word, { correct: true, suggestions: [] });
-        }
-      }
-    }
-    
-    return results;
+
+  isReady(): boolean {
+    return this.spell !== null;
   }
-  
-  private isLocallyCorrect(word: string): boolean {
-    // Check if it's in custom words
+
+  private shouldSkipWord(word: string): boolean {
     if (this.customWords.has(word.toLowerCase())) return true;
-    
-    // Check if it's an acronym (all caps)
-    if (word === word.toUpperCase() && word.length <= 5) return true;
-    
-    // Check camelCase or PascalCase
-    if (this.isCamelCase(word)) {
-      return this.checkCamelCase(word);
-    }
-    
+    if (word.startsWith('http://') || word.startsWith('https://')) return true;
+    if (word.includes('@')) return true;
+    if (/\d/.test(word)) return true;
+    if (word.length < 3) return true;
+    if (/[A-Z]/.test(word.slice(1)) || word.includes('_')) return true;
     return false;
   }
-  
-  private isCamelCase(word: string): boolean {
-    return /^[a-z]+(?:[A-Z][a-z]*)*$/.test(word) || /^[A-Z][a-z]+(?:[A-Z][a-z]*)*$/.test(word);
+
+  check(word: string): boolean {
+    if (!this.spell || this.shouldSkipWord(word)) return true;
+    return this.spell.correct(word);
   }
-  
-  private checkCamelCase(word: string): boolean {
-    // Split camelCase word into parts
-    const parts = word.split(/(?=[A-Z])/).filter(part => part.length > 0);
-    
-    // Check each part
-    return parts.every(part => {
-      const lower = part.toLowerCase();
-      return this.customWords.has(lower) || lower.length <= 2;
-    });
+
+  suggest(word: string, limit: number = 5): string[] {
+    if (!this.spell || this.shouldSkipWord(word)) return [];
+    const suggestions = this.spell.suggest(word);
+    return suggestions.slice(0, limit);
   }
-  
-  // Get word count for text
-  getWordCount(text: string): number {
-    const words = text.match(/\b[a-zA-Z]+(?:'[a-zA-Z]+)?\b/g);
-    return words ? words.length : 0;
+
+  addWord(word: string): void {
+    if (this.spell) {
+      this.spell.add(word);
+    }
+    this.customWords.add(word.toLowerCase());
   }
 }
+
+export const spellChecker = new SpellCheckerService();

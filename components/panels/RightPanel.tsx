@@ -1,13 +1,11 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EnhancedSuggestionsPanel } from './EnhancedSuggestionsPanel';
 import { AIChatPanel } from './AIChatPanel';
 import { motion } from 'framer-motion';
-import { useOptimizedAnalysis } from '@/hooks/useOptimizedAnalysis';
 import type { Editor } from '@tiptap/react';
-import type { UnifiedSuggestion } from '@/types/suggestions';
 
 interface RightPanelProps {
   documentId: string;
@@ -17,13 +15,6 @@ interface RightPanelProps {
   targetKeyword?: string;
   keywords?: string[];
   editor: Editor | null;
-  onSuggestionsUpdate?: (suggestions: UnifiedSuggestion[]) => void;
-  onScoresUpdate?: (scores: {
-    overall: number;
-    grammar: number;
-    readability: number;
-    seo: number;
-  }) => void;
 }
 
 export function RightPanel({ 
@@ -33,41 +24,9 @@ export function RightPanel({
   metaDescription,
   targetKeyword,
   keywords,
-  editor,
-  onSuggestionsUpdate,
-  onScoresUpdate
+  editor
 }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState('suggestions');
-
-  // Create document object for analysis - memoized to prevent infinite re-renders
-  const document = useMemo(() => ({
-    id: documentId,
-    title,
-    metaDescription,
-    targetKeyword: targetKeyword || '',
-    keywords: keywords || [],
-  }), [documentId, title, metaDescription, targetKeyword, keywords]);
-
-  // Use the optimized analysis hook with three-tier system
-  const { suggestions, scores } = useOptimizedAnalysis(editor, document);
-  
-  console.log('RightPanel suggestions:', suggestions);
-  console.log('RightPanel suggestions count:', suggestions.length);
-  
-  // Call onSuggestionsUpdate when suggestions change
-  useEffect(() => {
-    if (onSuggestionsUpdate) {
-      onSuggestionsUpdate(suggestions);
-    }
-  }, [suggestions, onSuggestionsUpdate]);
-  
-  // Call onScoresUpdate when scores change
-  useEffect(() => {
-    if (onScoresUpdate) {
-      onScoresUpdate(scores);
-    }
-  }, [scores, onScoresUpdate]);
-
 
   // Create document object for AI chat - also memoized
   const documentForAI = useMemo(() => ({
@@ -78,9 +37,9 @@ export function RightPanel({
       targetKeyword: targetKeyword || '',
       keywords: keywords || [],
       metaDescription: metaDescription || '',
-      seoScore: scores.seo,
+      seoScore: 0, // Simplified: Score will come from context later
     },
-  }), [documentId, title, content, targetKeyword, keywords, metaDescription, scores.seo]);
+  }), [documentId, title, content, targetKeyword, keywords, metaDescription]);
 
   return (
     <motion.div
@@ -93,7 +52,7 @@ export function RightPanel({
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
         <TabsList className="w-full rounded-none border-b">
           <TabsTrigger value="suggestions" className="flex-1">
-            Suggestions {suggestions.length > 0 && `(${suggestions.length})`}
+            Suggestions
           </TabsTrigger>
           <TabsTrigger value="ai" className="flex-1">
             AI Chat
