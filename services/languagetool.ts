@@ -89,11 +89,23 @@ export class LanguageToolService {
   private mockCheck(text: string): GrammarError[] {
     const errors: GrammarError[] = [];
     
-    // Simple mock: find common errors
+    // Simple mock: find common errors (spelling and grammar)
     const commonErrors = [
-      { pattern: /\bteh\b/gi, message: 'Possible spelling mistake found.', replacement: 'the' },
-      { pattern: /\byour\s+welcome\b/gi, message: 'Did you mean "you\'re welcome"?', replacement: "you're welcome" },
-      { pattern: /\bits\s+a\s+good\b/gi, message: 'Consider using "it\'s" (contraction).', replacement: "it's a good" },
+      // Spelling errors
+      { pattern: /\bteh\b/gi, message: 'Possible spelling mistake found.', replacement: 'the', category: 'TYPOS' },
+      { pattern: /\brecieve\b/gi, message: 'Possible spelling mistake found.', replacement: 'receive', category: 'TYPOS' },
+      { pattern: /\boccured\b/gi, message: 'Possible spelling mistake found.', replacement: 'occurred', category: 'TYPOS' },
+      { pattern: /\bseperate\b/gi, message: 'Possible spelling mistake found.', replacement: 'separate', category: 'TYPOS' },
+      { pattern: /\bdefinately\b/gi, message: 'Possible spelling mistake found.', replacement: 'definitely', category: 'TYPOS' },
+      { pattern: /\bwritting\b/gi, message: 'Possible spelling mistake found.', replacement: 'writing', category: 'TYPOS' },
+      { pattern: /\bmispelled\b/gi, message: 'Possible spelling mistake found.', replacement: 'misspelled', category: 'TYPOS' },
+      { pattern: /\bincorect\b/gi, message: 'Possible spelling mistake found.', replacement: 'incorrect', category: 'TYPOS' },
+      { pattern: /\bgrammer\b/gi, message: 'Possible spelling mistake found.', replacement: 'grammar', category: 'TYPOS' },
+      // Grammar errors
+      { pattern: /\byour\s+welcome\b/gi, message: 'Did you mean "you\'re welcome"?', replacement: "you're welcome", category: 'GRAMMAR' },
+      { pattern: /\bits\s+a\s+good\b/gi, message: 'Consider using "it\'s" (contraction).', replacement: "it's a good", category: 'GRAMMAR' },
+      { pattern: /\bcould\s+of\b/gi, message: 'Did you mean "could have"?', replacement: 'could have', category: 'GRAMMAR' },
+      { pattern: /\bwould\s+of\b/gi, message: 'Did you mean "would have"?', replacement: 'would have', category: 'GRAMMAR' },
     ];
 
     commonErrors.forEach((errorDef, index) => {
@@ -106,8 +118,8 @@ export class LanguageToolService {
           offset: match.index,
           length: match[0].length,
           replacements: [{ value: errorDef.replacement }],
-          category: 'Grammar',
-          severity: 'warning',
+          category: errorDef.category,
+          severity: errorDef.category === 'TYPOS' ? 'critical' : 'warning',
         });
       }
     });

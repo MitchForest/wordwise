@@ -2,8 +2,6 @@ import { LanguageToolService } from '@/services/languagetool';
 import { SEOAnalyzer } from '@/services/analysis/seo';
 import { ReadabilityAnalyzer } from '@/services/analysis/readability';
 import { StyleAnalyzer } from '@/services/analysis/style';
-import { SpellChecker } from '@/services/analysis/spellcheck';
-import { TypoCorrector } from '@/services/analysis/typos';
 import type { Editor } from '@tiptap/react';
 
 interface InstantCheckResult {
@@ -29,16 +27,12 @@ interface DeepCheckResult {
 }
 
 export class AnalysisEngine {
-  private spellChecker: SpellChecker;
-  private typoCorrector: TypoCorrector;
   private languageTool: LanguageToolService;
   private seoAnalyzer: SEOAnalyzer;
   private readabilityAnalyzer: ReadabilityAnalyzer;
   private styleAnalyzer: StyleAnalyzer;
   
   constructor() {
-    this.spellChecker = new SpellChecker();
-    this.typoCorrector = new TypoCorrector();
     this.languageTool = new LanguageToolService();
     this.seoAnalyzer = new SEOAnalyzer();
     this.readabilityAnalyzer = new ReadabilityAnalyzer();
@@ -56,16 +50,14 @@ export class AnalysisEngine {
       };
     }
     
-    const tasks = await Promise.allSettled([
-      this.spellChecker.check(text),
-      this.typoCorrector.check(text),
-      this.checkRepeatedWords(text),
-    ]);
+    // For instant checks, just check repeated words
+    // LanguageTool will handle spelling/grammar
+    const repeatedWords = await this.checkRepeatedWords(text);
     
     return {
-      spelling: this.getResult(tasks[0]),
-      typos: this.getResult(tasks[1]),
-      repeatedWords: this.getResult(tasks[2]),
+      spelling: [],
+      typos: [],
+      repeatedWords,
       timestamp: Date.now(),
     };
   }

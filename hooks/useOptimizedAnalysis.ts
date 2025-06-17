@@ -3,6 +3,7 @@ import { Editor } from '@tiptap/react';
 import { useDebounce } from './useDebounce';
 import { AnalysisEngine } from '@/services/analysis/engine';
 import { AnalysisCache } from '@/services/analysis/cache';
+import { extractTextWithMapping, plainTextToProseMirrorPosition, isValidProseMirrorRange } from '@/utils/position-mapper';
 import type { UnifiedSuggestion, AnalysisResults } from '@/types/suggestions';
 
 interface AnalysisConfig {
@@ -42,8 +43,13 @@ export function useOptimizedAnalysis(
     overall: 100,
   });
   
-  // Text extraction with memoization
-  const text = useMemo(() => editor?.getText() || '', [editor?.state]);
+  // Text extraction with position mapping
+  const textData = useMemo(() => {
+    if (!editor) return { text: '', mappings: [] };
+    return extractTextWithMapping(editor);
+  }, [editor?.state]);
+  
+  const text = textData.text;
   const textHash = useMemo(() => hashText(text), [text]);
   
   // Three-tier debouncing
@@ -81,24 +87,38 @@ export function useOptimizedAnalysis(
           severity: 'error',
           title: 'Spelling Error',
           message: `"${error.word}" may be misspelled`,
-          position: {
-            start: error.position,
-            end: error.position + error.length,
-          },
+          position: (() => {
+            const start = plainTextToProseMirrorPosition(error.position, textData.mappings);
+            const end = plainTextToProseMirrorPosition(error.position + error.length, textData.mappings);
+            // Only return valid positions
+            if (start !== -1 && end !== -1) {
+              return { start, end };
+            }
+            // Return original positions as fallback (will be filtered by decoration)
+            return { start: error.position, end: error.position + error.length };
+          })(),
           actions: error.suggestions.map((suggestion: string, index: number) => ({
             label: suggestion,
             type: 'fix' as const,
             primary: index === 0,
             handler: async () => {
-              if (editorRef.current) {
-                editorRef.current.chain()
-                  .focus()
-                  .setTextSelection({ 
-                    from: error.position, 
-                    to: error.position + error.length 
-                  })
-                  .insertContent(suggestion)
-                  .run();
+              if (editorRef.current && textData.mappings.length > 0) {
+                // Convert plain text position to ProseMirror position
+                const pmStart = plainTextToProseMirrorPosition(error.position, textData.mappings);
+                const pmEnd = plainTextToProseMirrorPosition(error.position + error.length, textData.mappings);
+                
+                if (pmStart !== -1 && pmEnd !== -1 && isValidProseMirrorRange(editorRef.current, pmStart, pmEnd)) {
+                  editorRef.current.chain()
+                    .focus()
+                    .setTextSelection({ 
+                      from: pmStart, 
+                      to: pmEnd 
+                    })
+                    .insertContent(suggestion)
+                    .run();
+                } else {
+                  console.warn('Could not apply spelling fix - invalid position mapping');
+                }
               }
             },
           })),
@@ -115,28 +135,120 @@ export function useOptimizedAnalysis(
           severity: 'warning',
           title: 'Possible Typo',
           message: `Did you mean "${typo.suggestion}"?`,
-          position: {
-            start: typo.position,
-            end: typo.position + typo.length,
-          },
+          position: (() => {
+            const start = plainTextToProseMirrorPosition(typo.position, textData.mappings);
+            const end = plainTextToProseMirrorPosition(typo.position + typo.length, textData.mappings);
+            // Only return valid positions
+            if (start !== -1 && end !== -1) {
+              return { start, end };
+            }
+            // Return original positions as fallback (will be filtered by decoration)
+            return { start: typo.position, end: typo.position + typo.length };
+          })(),
           actions: [{
             label: typo.suggestion,
             type: 'fix' as const,
             primary: true,
             handler: async () => {
-              if (editorRef.current) {
-                editorRef.current.chain()
-                  .focus()
-                  .setTextSelection({ 
-                    from: typo.position, 
-                    to: typo.position + typo.length 
-                  })
-                  .insertContent(typo.suggestion)
-                  .run();
+              if (editorRef.current && textData.mappings.length > 0) {
+                // Convert plain text position to ProseMirror position
+                const pmStart = plainTextToProseMirrorPosition(typo.position, textData.mappings);
+                const pmEnd = plainTextToProseMirrorPosition(typo.position + typo.length, textData.mappings);
+                
+                if (pmStart !== -1 && pmEnd !== -1 && isValidProseMirrorRange(editorRef.current, pmStart, pmEnd)) {
+                  editorRef.current.chain()
+                    .focus()
+                    .setTextSelection({ 
+                      from: pmStart, 
+                      to: pmEnd 
+                    })
+                    .insertContent(typo.suggestion)
+                    .run();
+                } else {
+                  console.warn('Could not apply typo fix - invalid position mapping');
+                }
               }
             },
           }],
         });
+      });
+    }
+    
+    // Convert grammar errors from LanguageTool
+    if (results.paragraphGrammar && Array.isArray(results.paragraphGrammar)) {
+      results.paragraphGrammar.forEach((error: any) => {
+        const docStart = plainTextToProseMirrorPosition(error.offset, textData.mappings);
+        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, textData.mappings);
+        
+        if (docStart !== -1 && docEnd !== -1) {
+          suggestions.push({
+            id: `${tier}-grammar-${idCounter++}`,
+            category: 'grammar', // Both spelling and grammar use 'grammar' category
+            title: error.category === 'TYPOS' ? 'Spelling Error' : 'Grammar Issue',
+            message: error.message,
+            severity: error.severity || 'warning',
+            position: {
+              start: docStart,
+              end: docEnd,
+            },
+            actions: error.replacements.map((replacement: any, idx: number) => ({
+              label: replacement.value,
+              type: 'fix' as const,
+              primary: idx === 0,
+              handler: () => {
+                if (!editorRef.current) return;
+                
+                if (isValidProseMirrorRange(editorRef.current, docStart, docEnd)) {
+                  editorRef.current.chain()
+                    .focus()
+                    .setTextSelection({ from: docStart, to: docEnd })
+                    .deleteSelection()
+                    .insertContent(replacement.value)
+                    .run();
+                }
+              }
+            }))
+          });
+        }
+      });
+    }
+    
+    // Convert full grammar check results
+    if (results.fullGrammar && Array.isArray(results.fullGrammar)) {
+      results.fullGrammar.forEach((error: any) => {
+        const docStart = plainTextToProseMirrorPosition(error.offset, textData.mappings);
+        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, textData.mappings);
+        
+        if (docStart !== -1 && docEnd !== -1) {
+          suggestions.push({
+            id: `${tier}-grammar-full-${idCounter++}`,
+            category: 'grammar', // Both spelling and grammar use 'grammar' category
+            title: error.category === 'TYPOS' ? 'Spelling Error' : 'Grammar Issue',
+            message: error.message,
+            severity: error.severity || 'warning',
+            position: {
+              start: docStart,
+              end: docEnd,
+            },
+            actions: error.replacements.map((replacement: any, idx: number) => ({
+              label: replacement.value,
+              type: 'fix' as const,
+              primary: idx === 0,
+              handler: () => {
+                if (!editorRef.current) return;
+                
+                if (isValidProseMirrorRange(editorRef.current, docStart, docEnd)) {
+                  editorRef.current.chain()
+                    .focus()
+                    .setTextSelection({ from: docStart, to: docEnd })
+                    .deleteSelection()
+                    .insertContent(replacement.value)
+                    .run();
+                }
+              }
+            }))
+          });
+        }
       });
     }
     
@@ -149,24 +261,38 @@ export function useOptimizedAnalysis(
           severity: 'suggestion',
           title: 'Repeated Word',
           message: repeat.message,
-          position: {
-            start: repeat.position,
-            end: repeat.position + repeat.length,
-          },
+          position: (() => {
+            const start = plainTextToProseMirrorPosition(repeat.position, textData.mappings);
+            const end = plainTextToProseMirrorPosition(repeat.position + repeat.length, textData.mappings);
+            // Only return valid positions
+            if (start !== -1 && end !== -1) {
+              return { start, end };
+            }
+            // Return original positions as fallback (will be filtered by decoration)
+            return { start: repeat.position, end: repeat.position + repeat.length };
+          })(),
           actions: [{
             label: 'Remove duplicate',
             type: 'fix' as const,
             primary: true,
             handler: async () => {
-              if (editorRef.current) {
-                editorRef.current.chain()
-                  .focus()
-                  .setTextSelection({ 
-                    from: repeat.position, 
-                    to: repeat.position + repeat.length 
-                  })
-                  .insertContent(repeat.suggestion)
-                  .run();
+              if (editorRef.current && textData.mappings.length > 0) {
+                // Convert plain text position to ProseMirror position
+                const pmStart = plainTextToProseMirrorPosition(repeat.position, textData.mappings);
+                const pmEnd = plainTextToProseMirrorPosition(repeat.position + repeat.length, textData.mappings);
+                
+                if (pmStart !== -1 && pmEnd !== -1 && isValidProseMirrorRange(editorRef.current, pmStart, pmEnd)) {
+                  editorRef.current.chain()
+                    .focus()
+                    .setTextSelection({ 
+                      from: pmStart, 
+                      to: pmEnd 
+                    })
+                    .insertContent(repeat.suggestion)
+                    .run();
+                } else {
+                  console.warn('Could not apply repeated word fix - invalid position mapping');
+                }
               }
             },
           }],
@@ -190,14 +316,22 @@ export function useOptimizedAnalysis(
             handler: async () => {
               // Find and highlight the sentence
               const sentenceStart = text.indexOf(issue.sentence);
-              if (sentenceStart >= 0 && editorRef.current) {
-                editorRef.current.chain()
-                  .focus()
-                  .setTextSelection({ 
-                    from: sentenceStart, 
-                    to: sentenceStart + issue.sentence.length 
-                  })
-                  .run();
+              if (sentenceStart >= 0 && editorRef.current && textData.mappings.length > 0) {
+                // Convert plain text position to ProseMirror position
+                const pmStart = plainTextToProseMirrorPosition(sentenceStart, textData.mappings);
+                const pmEnd = plainTextToProseMirrorPosition(sentenceStart + issue.sentence.length, textData.mappings);
+                
+                if (pmStart !== -1 && pmEnd !== -1 && isValidProseMirrorRange(editorRef.current, pmStart, pmEnd)) {
+                  editorRef.current.chain()
+                    .focus()
+                    .setTextSelection({ 
+                      from: pmStart, 
+                      to: pmEnd 
+                    })
+                    .run();
+                } else {
+                  console.warn('Could not highlight sentence - invalid position mapping');
+                }
               }
             },
           }],
@@ -264,7 +398,7 @@ export function useOptimizedAnalysis(
     }
     
     return suggestions;
-  }, [text]);
+  }, [text, textData.mappings]);
   
   // Update suggestions from tier
   const updateSuggestions = useCallback((results: any, tier: string) => {
@@ -328,7 +462,6 @@ export function useOptimizedAnalysis(
     const runInstantChecks = async () => {
       try {
         const instant = await analysisEngine.current.runInstantChecks(instantText);
-        
         setAnalyses(prev => ({ ...prev, instant }));
         updateSuggestions(instant, 'instant');
       } catch (error) {

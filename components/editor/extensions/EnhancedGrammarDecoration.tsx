@@ -24,21 +24,22 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
   
   addProseMirrorPlugins() {
     const options = this.options;
+    const pluginKey = new PluginKey('enhancedGrammarDecoration');
     
     return [
       new Plugin({
-        key: new PluginKey('enhancedGrammarDecoration'),
+        key: pluginKey,
         
         state: {
           init() {
-            return DecorationSet.empty;
+            return { decorations: DecorationSet.empty, suggestions: [] };
           },
           
-          apply(tr, decorationSet) {
+          apply(tr, value) {
             // Update decorations when suggestions change
             const meta = tr.getMeta('updateSuggestions');
             if (meta) {
-              const suggestions = meta.suggestions || options.suggestions;
+              const suggestions = meta.suggestions || [];
               const decorations: Decoration[] = [];
               
               suggestions.forEach((suggestion: UnifiedSuggestion) => {
@@ -67,22 +68,29 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
                 }
               });
               
-              return DecorationSet.create(tr.doc, decorations);
+              return { 
+                decorations: DecorationSet.create(tr.doc, decorations),
+                suggestions: suggestions
+              };
             }
             
             // Clear decorations if requested
             if (tr.getMeta('clearSuggestions')) {
-              return DecorationSet.empty;
+              return { decorations: DecorationSet.empty, suggestions: [] };
             }
             
             // Map decorations through document changes
-            return decorationSet.map(tr.mapping, tr.doc);
+            return {
+              decorations: value.decorations.map(tr.mapping, tr.doc),
+              suggestions: value.suggestions
+            };
           },
         },
         
         props: {
           decorations(state) {
-            return this.getState(state);
+            const pluginState = pluginKey.getState(state);
+            return pluginState?.decorations || DecorationSet.empty;
           },
           
           handleDOMEvents: {
@@ -90,7 +98,8 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
               const target = event.target as HTMLElement;
               if (target.classList.contains('grammar-decoration')) {
                 const suggestionId = target.getAttribute('data-suggestion-id');
-                const suggestion = options.suggestions.find((s: UnifiedSuggestion) => s.id === suggestionId);
+                const pluginState = pluginKey.getState(view.state);
+                const suggestion = pluginState?.suggestions?.find((s: UnifiedSuggestion) => s.id === suggestionId);
                 
                 if (suggestion) {
                   options.onSuggestionHover(suggestion, target);
@@ -99,7 +108,7 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
               return false;
             },
             
-            mouseleave: (view, event) => {
+            mouseleave: (_view, event) => {
               const target = event.target as HTMLElement;
               const relatedTarget = event.relatedTarget as HTMLElement;
               
@@ -115,7 +124,8 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
               const target = event.target as HTMLElement;
               if (target.classList.contains('grammar-decoration')) {
                 const suggestionId = target.getAttribute('data-suggestion-id');
-                const suggestion = options.suggestions.find((s: UnifiedSuggestion) => s.id === suggestionId);
+                const pluginState = pluginKey.getState(view.state);
+                const suggestion = pluginState?.suggestions?.find((s: UnifiedSuggestion) => s.id === suggestionId);
                 
                 if (suggestion) {
                   options.onSuggestionClick(suggestion, target);
