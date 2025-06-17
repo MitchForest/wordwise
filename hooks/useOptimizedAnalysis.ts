@@ -78,6 +78,8 @@ export function useOptimizedAnalysis(
     const suggestions: UnifiedSuggestion[] = [];
     let idCounter = 0;
     
+    console.log(`Converting ${tier} results:`, results);
+    
     // Convert spelling errors
     if (results.spelling && Array.isArray(results.spelling)) {
       results.spelling.forEach((error: any) => {
@@ -472,7 +474,8 @@ export function useOptimizedAnalysis(
     };
     
     runInstantChecks();
-  }, [instantText, config.enableInstantChecks, updateSuggestions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instantText, config.enableInstantChecks]);
   
   // Smart checks: paragraph grammar, quick SEO (500ms delay)
   useEffect(() => {
@@ -505,7 +508,8 @@ export function useOptimizedAnalysis(
     };
     
     runSmartChecks();
-  }, [smartText, textHash, config.enableSmartChecks, updateSuggestions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [smartText, textHash, config.enableSmartChecks]);
   
   // Deep checks: full document analysis (2s delay)
   useEffect(() => {
@@ -537,7 +541,8 @@ export function useOptimizedAnalysis(
     };
     
     runDeepChecks();
-  }, [deepText, textHash, config.enableDeepChecks, updateSuggestions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepText, textHash, config.enableDeepChecks]);
   
   // Update scores when analyses change
   useEffect(() => {

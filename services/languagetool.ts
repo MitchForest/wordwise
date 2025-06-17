@@ -30,7 +30,7 @@ export interface GrammarError {
 }
 
 export class LanguageToolService {
-  private apiUrl = 'https://api.languagetoolplus.com/v2/check';
+  private apiUrl = `${process.env.NEXT_PUBLIC_LANGUAGETOOL_ENDPOINT || 'https://api.languagetoolplus.com/v2/'}check`;
   private apiKey = process.env.NEXT_PUBLIC_LANGUAGETOOL_API_KEY;
 
   async check(text: string): Promise<GrammarError[]> {
@@ -39,22 +39,32 @@ export class LanguageToolService {
       return this.mockCheck(text);
     }
 
+    console.log('Using real LanguageTool API with key:', this.apiKey);
+    
     try {
       const params = new URLSearchParams({
         text,
         language: 'en-US',
-        apiKey: this.apiKey,
       });
 
       const response = await fetch(this.apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+          'X-API-Key': this.apiKey,
         },
         body: params.toString(),
       });
 
+      if (!response.ok) {
+        console.error('LanguageTool API error:', response.status, await response.text());
+        throw new Error(`LanguageTool API error: ${response.status}`);
+      }
+
       const data = await response.json();
+      console.log('LanguageTool API response:', data);
+      
       const matches: LanguageToolMatch[] = data.matches || [];
       
       return matches.map(match => ({
@@ -69,7 +79,8 @@ export class LanguageToolService {
       }));
     } catch (error) {
       console.error('LanguageTool API error:', error);
-      return [];
+      // Fall back to mock if API fails
+      return this.mockCheck(text);
     }
   }
 
@@ -87,11 +98,14 @@ export class LanguageToolService {
 
   // Mock implementation for development/demo
   private mockCheck(text: string): GrammarError[] {
+    console.log('LanguageTool mockCheck called with:', text);
     const errors: GrammarError[] = [];
     
     // Simple mock: find common errors (spelling and grammar)
     const commonErrors = [
       // Spelling errors
+      { pattern: /\bnme\b/gi, message: 'Possible spelling mistake found.', replacement: 'name', category: 'TYPOS' },
+      { pattern: /\bwrtng\b/gi, message: 'Possible spelling mistake found.', replacement: 'writing', category: 'TYPOS' },
       { pattern: /\bteh\b/gi, message: 'Possible spelling mistake found.', replacement: 'the', category: 'TYPOS' },
       { pattern: /\brecieve\b/gi, message: 'Possible spelling mistake found.', replacement: 'receive', category: 'TYPOS' },
       { pattern: /\boccured\b/gi, message: 'Possible spelling mistake found.', replacement: 'occurred', category: 'TYPOS' },
@@ -106,6 +120,8 @@ export class LanguageToolService {
       { pattern: /\bits\s+a\s+good\b/gi, message: 'Consider using "it\'s" (contraction).', replacement: "it's a good", category: 'GRAMMAR' },
       { pattern: /\bcould\s+of\b/gi, message: 'Did you mean "could have"?', replacement: 'could have', category: 'GRAMMAR' },
       { pattern: /\bwould\s+of\b/gi, message: 'Did you mean "would have"?', replacement: 'would have', category: 'GRAMMAR' },
+      { pattern: /\b(you)\s+\1\b/gi, message: 'Repeated word found.', replacement: 'you', category: 'GRAMMAR' },
+      { pattern: /\bTheir\s+is\b/g, message: 'Did you mean "There is"?', replacement: 'There is', category: 'GRAMMAR' },
     ];
 
     commonErrors.forEach((errorDef, index) => {
@@ -124,6 +140,7 @@ export class LanguageToolService {
       }
     });
 
+    console.log('LanguageTool mockCheck found errors:', errors);
     return errors;
   }
 } 

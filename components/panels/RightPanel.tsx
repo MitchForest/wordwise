@@ -44,6 +44,8 @@ export function RightPanel({
   // Use the optimized analysis hook with three-tier system
   const { suggestions, scores, isAnalyzing } = useOptimizedAnalysis(editor, document);
   
+  console.log('RightPanel suggestions:', suggestions);
+  
   // Call onSuggestionsUpdate when suggestions change
   useEffect(() => {
     if (onSuggestionsUpdate) {
