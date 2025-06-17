@@ -52,6 +52,7 @@ export function RightPanel({
   const { suggestions, scores } = useOptimizedAnalysis(editor, document);
   
   console.log('RightPanel suggestions:', suggestions);
+  console.log('RightPanel suggestions count:', suggestions.length);
   
   // Call onSuggestionsUpdate when suggestions change
   useEffect(() => {

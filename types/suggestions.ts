@@ -8,7 +8,7 @@ export interface SuggestionAction {
 
 export interface UnifiedSuggestion {
   id: string;
-  category: 'grammar' | 'readability' | 'seo' | 'style';
+  category: 'grammar' | 'spelling' | 'readability' | 'seo' | 'style';
   severity: 'error' | 'warning' | 'info' | 'suggestion';
   title: string;
   message: string;

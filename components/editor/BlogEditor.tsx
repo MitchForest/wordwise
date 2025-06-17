@@ -5,7 +5,7 @@ import { EditorContent, EditorContext, useEditor } from '@tiptap/react';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useGrammarCheck } from '@/hooks/useGrammarCheck';
 import { useSession } from '@/lib/auth/client';
-import { useDocumentTitleUpdate } from '@/components/layout/AppLayout';
+import { useDocumentTitleUpdate, useDocumentUpdates } from '@/components/layout/AppLayout';
 import { RightPanel } from '@/components/panels/RightPanel';
 import { DocumentHeader } from './DocumentHeader';
 import { SEOSettings } from './SEOSettings';
@@ -86,6 +86,7 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
   const { data: session } = useSession();
   const { setSuggestions: setContextSuggestions } = useSuggestions();
   const onDocumentTitleChange = useDocumentTitleUpdate();
+  const documentUpdates = useDocumentUpdates();
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [metaDescription, setMetaDescription] = useState(initialDocument?.metaDescription || '');
   const [author, setAuthor] = useState(initialDocument?.author || session?.user?.name || 'Anonymous');
@@ -187,10 +188,22 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
     }
   }, [onSuggestionsUpdate, setContextSuggestions]);
 
-  // Sync title updates
+  // Sync title updates from initial document
   useEffect(() => {
-    setTitle(initialDocument?.title || 'Untitled Document');
+    if (initialDocument?.title) {
+      setTitle(initialDocument.title);
+    }
   }, [initialDocument?.title]);
+  
+  // Listen for title updates from sidebar
+  useEffect(() => {
+    const update = documentUpdates[documentId];
+    if (update?.title && update.timestamp > 0) {
+      setTitle(update.title);
+      // Force immediate re-render
+      console.log('Title updated from sidebar:', update.title);
+    }
+  }, [documentId, documentUpdates]);
 
   // Set up content change handler
   useEffect(() => {
@@ -252,9 +265,9 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
   };
 
   return (
-    <div className="h-full flex bg-gray-50 relative">
+    <div className="h-full flex bg-gray-50">
       {/* Main Editor Area */}
-      <div className="flex-1 flex flex-col pb-12"> {/* Add padding bottom for status bar */}
+      <div className="flex-1 flex flex-col relative"> {/* Make this container relative for status bar */}
         {/* Document Header */}
         <DocumentHeader
           title={title}
@@ -346,6 +359,9 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
             </div>
           </EditorContext.Provider>
         </div>
+        
+        {/* Fixed Status Bar - Only for editor area */}
+        <EditorStatusBar scores={scores} />
       </div>
 
       {/* Right Panel */}
@@ -378,8 +394,6 @@ export function BlogEditor({ documentId, initialDocument, onSuggestionsUpdate }:
         </div>
       )}
       
-      {/* Fixed Status Bar */}
-      <EditorStatusBar scores={scores} />
     </div>
   );
 } 

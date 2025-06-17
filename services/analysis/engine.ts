@@ -50,13 +50,15 @@ export class AnalysisEngine {
       };
     }
     
-    // For instant checks, just check repeated words
-    // LanguageTool will handle spelling/grammar
-    const repeatedWords = await this.checkRepeatedWords(text);
+    // Run LanguageTool for instant spelling/grammar checks
+    const [languageToolResults, repeatedWords] = await Promise.all([
+      this.languageTool.check(text),
+      this.checkRepeatedWords(text)
+    ]);
     
     return {
-      spelling: [],
-      typos: [],
+      spelling: languageToolResults || [],
+      typos: [], // LanguageTool handles typos too
       repeatedWords,
       timestamp: Date.now(),
     };

@@ -30,16 +30,24 @@ export interface GrammarError {
 }
 
 export class LanguageToolService {
-  private apiUrl = `${process.env.NEXT_PUBLIC_LANGUAGETOOL_ENDPOINT || 'https://api.languagetoolplus.com/v2/'}check`;
-  private apiKey = process.env.NEXT_PUBLIC_LANGUAGETOOL_API_KEY;
+  private apiUrl = '/api/languagetool'; // Use our proxy endpoint
+
+  constructor() {
+    console.log('LanguageToolService initialized');
+  }
 
   async check(text: string): Promise<GrammarError[]> {
-    // For Phase 1, we'll use a mock implementation if no API key is provided
-    if (!this.apiKey) {
-      return this.mockCheck(text);
+    // Skip during SSR
+    if (typeof window === 'undefined') {
+      return [];
+    }
+    
+    // Skip empty text
+    if (!text || text.trim().length === 0) {
+      return [];
     }
 
-    console.log('Using real LanguageTool API with key:', this.apiKey);
+    console.log('Checking text with LanguageTool API proxy');
     
     try {
       const params = new URLSearchParams({
@@ -52,9 +60,11 @@ export class LanguageToolService {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Accept': 'application/json',
-          'X-API-Key': this.apiKey,
         },
         body: params.toString(),
+      }).catch(err => {
+        console.error('Fetch error:', err);
+        throw new Error(`Network error: ${err.message}`);
       });
 
       if (!response.ok) {
@@ -79,8 +89,8 @@ export class LanguageToolService {
       }));
     } catch (error) {
       console.error('LanguageTool API error:', error);
-      // Fall back to mock if API fails
-      return this.mockCheck(text);
+      // Return empty array on error - no fallback to mock
+      return [];
     }
   }
 
@@ -96,51 +106,4 @@ export class LanguageToolService {
     }
   }
 
-  // Mock implementation for development/demo
-  private mockCheck(text: string): GrammarError[] {
-    console.log('LanguageTool mockCheck called with:', text);
-    const errors: GrammarError[] = [];
-    
-    // Simple mock: find common errors (spelling and grammar)
-    const commonErrors = [
-      // Spelling errors
-      { pattern: /\bnme\b/gi, message: 'Possible spelling mistake found.', replacement: 'name', category: 'TYPOS' },
-      { pattern: /\bwrtng\b/gi, message: 'Possible spelling mistake found.', replacement: 'writing', category: 'TYPOS' },
-      { pattern: /\bteh\b/gi, message: 'Possible spelling mistake found.', replacement: 'the', category: 'TYPOS' },
-      { pattern: /\brecieve\b/gi, message: 'Possible spelling mistake found.', replacement: 'receive', category: 'TYPOS' },
-      { pattern: /\boccured\b/gi, message: 'Possible spelling mistake found.', replacement: 'occurred', category: 'TYPOS' },
-      { pattern: /\bseperate\b/gi, message: 'Possible spelling mistake found.', replacement: 'separate', category: 'TYPOS' },
-      { pattern: /\bdefinately\b/gi, message: 'Possible spelling mistake found.', replacement: 'definitely', category: 'TYPOS' },
-      { pattern: /\bwritting\b/gi, message: 'Possible spelling mistake found.', replacement: 'writing', category: 'TYPOS' },
-      { pattern: /\bmispelled\b/gi, message: 'Possible spelling mistake found.', replacement: 'misspelled', category: 'TYPOS' },
-      { pattern: /\bincorect\b/gi, message: 'Possible spelling mistake found.', replacement: 'incorrect', category: 'TYPOS' },
-      { pattern: /\bgrammer\b/gi, message: 'Possible spelling mistake found.', replacement: 'grammar', category: 'TYPOS' },
-      // Grammar errors
-      { pattern: /\byour\s+welcome\b/gi, message: 'Did you mean "you\'re welcome"?', replacement: "you're welcome", category: 'GRAMMAR' },
-      { pattern: /\bits\s+a\s+good\b/gi, message: 'Consider using "it\'s" (contraction).', replacement: "it's a good", category: 'GRAMMAR' },
-      { pattern: /\bcould\s+of\b/gi, message: 'Did you mean "could have"?', replacement: 'could have', category: 'GRAMMAR' },
-      { pattern: /\bwould\s+of\b/gi, message: 'Did you mean "would have"?', replacement: 'would have', category: 'GRAMMAR' },
-      { pattern: /\b(you)\s+\1\b/gi, message: 'Repeated word found.', replacement: 'you', category: 'GRAMMAR' },
-      { pattern: /\bTheir\s+is\b/g, message: 'Did you mean "There is"?', replacement: 'There is', category: 'GRAMMAR' },
-    ];
-
-    commonErrors.forEach((errorDef, index) => {
-      let match;
-      while ((match = errorDef.pattern.exec(text)) !== null) {
-        errors.push({
-          id: `mock-${index}-${match.index}`,
-          message: errorDef.message,
-          shortMessage: errorDef.message,
-          offset: match.index,
-          length: match[0].length,
-          replacements: [{ value: errorDef.replacement }],
-          category: errorDef.category,
-          severity: errorDef.category === 'TYPOS' ? 'critical' : 'warning',
-        });
-      }
-    });
-
-    console.log('LanguageTool mockCheck found errors:', errors);
-    return errors;
-  }
 } 

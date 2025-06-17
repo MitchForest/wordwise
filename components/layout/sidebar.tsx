@@ -29,9 +29,10 @@ interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
   onDocumentTitleChange?: (documentId: string, newTitle: string) => void;
+  refreshDocumentsRef?: React.MutableRefObject<() => void>;
 }
 
-export function Sidebar({ collapsed, onToggle, onDocumentTitleChange }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, onDocumentTitleChange, refreshDocumentsRef }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -44,6 +45,13 @@ export function Sidebar({ collapsed, onToggle, onDocumentTitleChange }: SidebarP
   useEffect(() => {
     fetchDocuments();
   }, []);
+  
+  // Expose fetchDocuments to parent via ref
+  useEffect(() => {
+    if (refreshDocumentsRef) {
+      refreshDocumentsRef.current = fetchDocuments;
+    }
+  }, [refreshDocumentsRef]);
 
   // Refresh documents when pathname changes (navigating between documents)
   useEffect(() => {
@@ -107,14 +115,21 @@ export function Sidebar({ collapsed, onToggle, onDocumentTitleChange }: SidebarP
       });
 
       if (response.ok) {
-        // Update local state
-        setDocuments(prev => 
-          prev.map(doc => 
+        // Update local state and re-sort
+        setDocuments(prev => {
+          const updated = prev.map(doc => 
             doc.id === documentId 
               ? { ...doc, starred } 
               : doc
-          )
-        );
+          );
+          
+          // Re-sort: starred first, then by updatedAt
+          return updated.sort((a, b) => {
+            if (a.starred && !b.starred) return -1;
+            if (!a.starred && b.starred) return 1;
+            return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+          });
+        });
       } else {
         console.error('Failed to update document star status');
       }
@@ -453,15 +468,10 @@ function DocumentItem({
               />
             ) : (
               <div>
-                <div className="flex items-center gap-1">
-                  <p className={cn(
-                    "text-sm truncate",
-                    isActive ? "text-blue-900 font-medium" : "text-neutral-700"
-                  )}>{title}</p>
-                  {document.starred && (
-                    <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 flex-shrink-0" />
-                  )}
-                </div>
+                <p className={cn(
+                  "text-sm truncate",
+                  isActive ? "text-blue-900 font-medium" : "text-neutral-700"
+                )}>{title}</p>
                 <p className="text-xs text-gray-500">
                   {new Date(document.updatedAt).toLocaleDateString()}
                 </p>

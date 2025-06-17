@@ -1,12 +1,14 @@
 'use client';
 
 import { Sidebar } from './sidebar';
-import { useState, createContext, useContext } from 'react';
+import { useState, createContext, useContext, useRef } from 'react';
 import { useSession } from '@/lib/auth/client';
 
 // Context for document title updates
 interface DocumentTitleContextType {
   onDocumentTitleChange: (documentId: string, newTitle: string) => void;
+  refreshDocuments: () => void;
+  documentUpdates: { [key: string]: { title?: string; timestamp: number } };
 }
 
 const DocumentTitleContext = createContext<DocumentTitleContextType | null>(null);
@@ -16,17 +18,35 @@ export const useDocumentTitleUpdate = () => {
   return context?.onDocumentTitleChange;
 };
 
+export const useDocumentRefresh = () => {
+  const context = useContext(DocumentTitleContext);
+  return context?.refreshDocuments;
+};
+
+export const useDocumentUpdates = () => {
+  const context = useContext(DocumentTitleContext);
+  return context?.documentUpdates || {};
+};
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { data: session } = useSession();
+  const refreshDocumentsRef = useRef<() => void>(() => {});
+  const [documentUpdates, setDocumentUpdates] = useState<{ [key: string]: { title?: string; timestamp: number } }>({});
   
-  const handleDocumentTitleChange = () => {
-    // This will trigger a re-render and the sidebar will update through its own state management
-    // The callback here mainly serves to provide a centralized way to handle title changes
-    // if we need to add additional logic in the future (like updating browser title, etc.)
+  const handleDocumentTitleChange = (documentId: string, newTitle: string) => {
+    // Refresh the sidebar documents list when title changes
+    refreshDocumentsRef.current();
     
-    // For now, the sidebar handles its own state updates via API calls
-    // but this provides a hook for future enhancements
+    // Store the update for the editor to pick up
+    setDocumentUpdates(prev => ({
+      ...prev,
+      [documentId]: { title: newTitle, timestamp: Date.now() }
+    }));
+  };
+  
+  const refreshDocuments = () => {
+    refreshDocumentsRef.current();
   };
   
   if (!session) {
@@ -34,12 +54,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
   
   return (
-    <DocumentTitleContext.Provider value={{ onDocumentTitleChange: handleDocumentTitleChange }}>
+    <DocumentTitleContext.Provider value={{ onDocumentTitleChange: handleDocumentTitleChange, refreshDocuments, documentUpdates }}>
       <div className="flex h-screen overflow-hidden">
         <Sidebar 
           collapsed={sidebarCollapsed} 
           onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
           onDocumentTitleChange={handleDocumentTitleChange}
+          refreshDocumentsRef={refreshDocumentsRef}
         />
         <main className="flex-1 overflow-hidden">
           {children}

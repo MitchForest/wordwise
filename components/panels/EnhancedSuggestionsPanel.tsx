@@ -236,6 +236,23 @@ function SuggestionCard({
         return 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950';
     }
   };
+  
+  const getCategoryStyles = (category: string) => {
+    switch (category) {
+      case 'grammar':
+        return 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300';
+      case 'spelling':
+        return 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300';
+      case 'style':
+        return 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300';
+      case 'seo':
+        return 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300';
+      case 'readability':
+        return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300';
+      default:
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300';
+    }
+  };
 
   return (
     <motion.div
@@ -255,8 +272,16 @@ function SuggestionCard({
         isAnimatingOut && "pointer-events-none"
       )}
     >
-      {/* Message */}
-      <p className="text-sm mb-3">{suggestion.message}</p>
+      {/* Category Badge and Message */}
+      <div className="flex items-start gap-2 mb-3">
+        <span className={cn(
+          "px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0",
+          getCategoryStyles(suggestion.category)
+        )}>
+          {suggestion.category}
+        </span>
+        <p className="text-sm flex-1">{suggestion.message}</p>
+      </div>
       
       {/* Actions */}
       <div className="flex items-center gap-2">

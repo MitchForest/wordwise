@@ -53,7 +53,7 @@ export function useOptimizedAnalysis(
   const textHash = useMemo(() => hashText(text), [text]);
   
   // Three-tier debouncing
-  const instantText = text; // No debounce for instant checks
+  const instantText = useDebounce(text, 100); // Small debounce to avoid API spam
   const smartText = useDebounce(text, 500); // 500ms for smart checks
   const deepText = useDebounce(text, 2000); // 2s for deep analysis
   
@@ -80,51 +80,50 @@ export function useOptimizedAnalysis(
     
     console.log(`Converting ${tier} results:`, results);
     
-    // Convert spelling errors
+    // Convert spelling errors (LanguageTool format)
     if (results.spelling && Array.isArray(results.spelling)) {
       results.spelling.forEach((error: any) => {
-        suggestions.push({
-          id: `${tier}-spelling-${idCounter++}`,
-          category: 'grammar',
-          severity: 'error',
-          title: 'Spelling Error',
-          message: `"${error.word}" may be misspelled`,
-          position: (() => {
-            const start = plainTextToProseMirrorPosition(error.position, textData.mappings);
-            const end = plainTextToProseMirrorPosition(error.position + error.length, textData.mappings);
-            // Only return valid positions
-            if (start !== -1 && end !== -1) {
-              return { start, end };
-            }
-            // Return original positions as fallback (will be filtered by decoration)
-            return { start: error.position, end: error.position + error.length };
-          })(),
-          actions: error.suggestions.map((suggestion: string, index: number) => ({
-            label: suggestion,
-            type: 'fix' as const,
-            primary: index === 0,
-            handler: async () => {
-              if (editorRef.current && textData.mappings.length > 0) {
-                // Convert plain text position to ProseMirror position
-                const pmStart = plainTextToProseMirrorPosition(error.position, textData.mappings);
-                const pmEnd = plainTextToProseMirrorPosition(error.position + error.length, textData.mappings);
+        const docStart = plainTextToProseMirrorPosition(error.offset, textData.mappings);
+        const docEnd = plainTextToProseMirrorPosition(error.offset + error.length, textData.mappings);
+        
+        if (docStart !== -1 && docEnd !== -1) {
+          // Extract the error text from the document
+          const errorText = text.substring(error.offset, error.offset + error.length);
+          
+          suggestions.push({
+            id: `${tier}-spelling-${idCounter++}`,
+            category: error.category === 'TYPOS' ? 'spelling' : 'grammar',
+            severity: error.severity || 'error',
+            title: error.category === 'TYPOS' ? 'Spelling Error' : 'Grammar Issue',
+            message: error.message,
+            position: {
+              start: docStart,
+              end: docEnd,
+            },
+            context: {
+              text: errorText,
+              length: error.length,
+            },
+            actions: error.replacements.map((replacement: any, idx: number) => ({
+              label: replacement.value,
+              type: 'fix' as const,
+              primary: idx === 0,
+              value: replacement.value,
+              handler: () => {
+                if (!editorRef.current) return;
                 
-                if (pmStart !== -1 && pmEnd !== -1 && isValidProseMirrorRange(editorRef.current, pmStart, pmEnd)) {
+                if (isValidProseMirrorRange(editorRef.current, docStart, docEnd)) {
                   editorRef.current.chain()
                     .focus()
-                    .setTextSelection({ 
-                      from: pmStart, 
-                      to: pmEnd 
-                    })
-                    .insertContent(suggestion)
+                    .setTextSelection({ from: docStart, to: docEnd })
+                    .deleteRange({ from: docStart, to: docEnd })
+                    .insertContent(replacement.value)
                     .run();
-                } else {
-                  console.warn('Could not apply spelling fix - invalid position mapping');
                 }
               }
-            },
-          })),
-        });
+            }))
+          });
+        }
       });
     }
     
@@ -399,7 +398,22 @@ export function useOptimizedAnalysis(
       }
     }
     
-    return suggestions;
+    // Deduplicate suggestions by position and message
+    const deduplicatedSuggestions = suggestions.reduce((acc: UnifiedSuggestion[], current) => {
+      const duplicate = acc.find(s => 
+        s.position?.start === current.position?.start &&
+        s.position?.end === current.position?.end &&
+        s.message === current.message
+      );
+      
+      if (!duplicate) {
+        acc.push(current);
+      }
+      
+      return acc;
+    }, []);
+    
+    return deduplicatedSuggestions;
   }, [text, textData.mappings]);
   
   // Update suggestions from tier
