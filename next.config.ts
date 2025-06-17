@@ -28,6 +28,12 @@ const nextConfig: NextConfig = {
     return config;
   },
   serverExternalPackages: ['postgres'],
+  devIndicators: {
+    buildActivity: false,
+  },
+  experimental: {
+    // Your existing experimental flags here...
+  },
 };
 
 export default nextConfig;

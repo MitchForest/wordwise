@@ -10,7 +10,7 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: true,
+    requireEmailVerification: false,
   },
   socialProviders: {
     google: {
@@ -21,10 +21,6 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 24 hours
-  },
-  emailVerification: {
-    sendOnSignUp: true,
-    autoSignInAfterVerification: true,
   },
   trustedOrigins: [process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'],
 })
