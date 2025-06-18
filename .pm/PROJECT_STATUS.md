@@ -1,11 +1,17 @@
 # WordWise Project Status
 
 ## Current Sprint
-**Sprint**: 006 - WordPress Publishing MVP ✅ COMPLETED  
-**Epic**: 001 - Local-First Analysis Refactor  
-**Status**: Planning Architecture Transformation (Sprints 7-12)
+**Sprint**: Planning Epic 1.5 - Pragmatic Architecture Improvements
+**Epic**: 001.5 - Pragmatic Architecture Improvements  
+**Status**: Epic and Sprint files created, ready for implementation
 
 ## Recent Achievements
+
+### Epic 1.5 Planning Completed ✅
+- Created epic folder structure following PM guide
+- Generated 4 focused sprint files (007-010)
+- Pivoted from complex event-sourcing to pragmatic text-based approach
+- Reduced timeline from 8.5 weeks to 4 weeks
 
 ### Sprint 006 Completed ✅
 - Implemented WordPress REST API integration
@@ -15,74 +21,67 @@
 - Fixed duplicate suggestion keys with position-based IDs
 - Resolved all editor layout and animation issues
 
-### Architecture Decision
-After analyzing persistent position-related bugs and preparing for Epic 2 (AI features), we've designed a comprehensive architecture transformation:
+### Architecture Decision Update
+After reviewing the original Sprint 7-12 event-sourcing plan, adopted a more pragmatic approach based on industry best practices:
 
-**New Event-Sourced Suggestion System**
-- Suggestions as immutable events (not mutable state)
-- Document version tracking with snapshots
-- Multi-strategy position resolution
-- Reactive streams with RxJS
-- Layered analysis pipeline
-- Progressive UI rendering
+**New Text-Based Suggestion System**
+- Text-based matching (not position-based)
+- Incremental analysis (10x performance gain)
+- Smart responsiveness with dynamic debouncing
+- Clean architecture ready for AI integration
+- Ships in 4 weeks instead of 8.5 weeks
 
-## Upcoming Sprints (7-12)
+## Upcoming Sprints (Epic 1.5)
 
-### Sprint 007: Document Version Tracking (1 week)
-- Implement DocumentSnapshot system
-- Build version manager with checksums
-- Add IndexedDB storage
+### Sprint 007: Text-Based Suggestions (1 week)
+- Fix position bug permanently with text-based matching
+- Implement fuzzy text finding algorithm
+- Add automatic suggestion cleanup
+- Create backward compatibility adapter
 
-### Sprint 008: Suggestion Events Architecture (1.5 weeks)
-- Transform suggestions to immutable events
-- Implement position resolution strategies
-- Build migration adapters
+### Sprint 008: Incremental Analysis System (1 week)
+- Only analyze changed paragraphs
+- Implement smart caching layer
+- Build clean analyzer pipeline
+- Add performance monitoring
 
-### Sprint 009: Reactive Streams (1 week)
-- Implement RxJS-based state management
-- Build optimistic update system
-- Create stream-based UI components
+### Sprint 009: Smart Responsiveness (1 week)
+- Dynamic debouncing based on edit type
+- Client-side pre-filtering
+- Suggestion relevance scoring
+- Progressive enhancement for slow connections
 
-### Sprint 010: Layered Analysis Pipeline (1.5 weeks)
-- Create flexible analyzer system
-- Support concurrent/sequential execution
-- Add caching and retry logic
-
-### Sprint 011: UI Performance (1 week)
-- Implement virtual scrolling
-- Optimize animations
-- Add progressive rendering
-
-### Sprint 012: Migration & Rollout (2 weeks)
+### Sprint 010: Performance & Polish (1 week)
+- Virtual scrolling for 500+ suggestions
+- Web Worker for text search
 - Feature flag system
-- Gradual rollout strategy
-- Monitoring and rollback capability
+- Migration and monitoring
 
 ## Technical Decisions
 
-1. **Why Event Sourcing?**: Current position-based system breaks when document changes. Events with version tracking ensure suggestions remain valid.
+1. **Why Text-Based?**: Position-based suggestions break when document changes. Text is the invariant - track WHAT is wrong, not WHERE.
 
-2. **Why RxJS?**: Complex state management with multiple analysis tiers requires reactive programming for efficiency.
+2. **Why Incremental Analysis?**: Analyzing entire documents is wasteful. Only process what changed for 10x performance.
 
-3. **Why Now?**: Before adding AI features (Epic 2), we need a robust foundation that can handle async operations and complex state.
+3. **Why This Approach?**: Simpler, proven patterns used by Grammarly. Lower risk, faster delivery, better user experience.
 
 ## Next Actions
-1. Begin Sprint 007 implementation
-2. Set up RxJS and required dependencies
-3. Create detailed technical design docs
-4. Prepare migration strategy
+1. Review and approve Epic 1.5 plan
+2. Begin Sprint 007 implementation
+3. Set up performance monitoring baseline
+4. Prepare feature flag infrastructure
 
 ## Risk Mitigation
-- Parallel system operation during migration
-- Feature flags for gradual rollout
-- Comprehensive testing at each phase
-- Ability to rollback at any point
+- Each sprint delivers user value
+- Feature flags for safe rollout
+- Backward compatibility maintained
+- Simple, debuggable architecture
 
 ## Project Health
 - **Code Quality**: Good (linting/type checks passing)
-- **Performance**: Good (but will improve significantly)
-- **Architecture**: Transitioning to excellent
-- **Documentation**: Comprehensive sprint plans created
+- **Performance**: Current issues, but clear path to 10x improvement
+- **Architecture**: Transitioning to pragmatic, proven patterns
+- **Documentation**: Comprehensive epic and sprint plans created
 
 ---
 *Last Updated: 2024-12-28* 
