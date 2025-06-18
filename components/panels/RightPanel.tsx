@@ -42,11 +42,17 @@ export function RightPanel({
 
   return (
     <motion.div
-      initial={{ width: 0, opacity: 0 }}
-      animate={{ width: 384, opacity: 1 }}
-      exit={{ width: 0, opacity: 0 }}
-      transition={{ duration: 0.3, ease: 'easeInOut' }}
-      className="w-96 h-full bg-white border-l border-neutral-200 flex flex-col overflow-hidden"
+      initial={{ width: 0, opacity: 0, x: 20 }}
+      animate={{ width: 384, opacity: 1, x: 0 }}
+      exit={{ width: 0, opacity: 0, x: 20 }}
+      transition={{ 
+        duration: 0.3, 
+        ease: [0.4, 0.0, 0.2, 1], // Custom easing for smoother animation
+        width: { duration: 0.3 },
+        opacity: { duration: 0.2 }
+      }}
+      className="h-full bg-white border-l border-neutral-200 flex flex-col overflow-hidden"
+      style={{ width: 384 }} // Set fixed width to prevent layout shift
     >
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
         <TabsList className="w-full rounded-none border-b shrink-0">

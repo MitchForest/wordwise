@@ -13,9 +13,10 @@ import { useSession } from '@/lib/auth/client';
 import { useDocumentTitleUpdate, useDocumentUpdates } from '@/components/layout/AppLayout';
 import { RightPanel } from '@/components/panels/RightPanel';
 import { DocumentHeader } from './DocumentHeader';
-import { SEOSettings } from './SEOSettings';
+import { SEOModal } from './SEOModal';
 import type { JSONContent } from '@tiptap/react';
 import { AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 // --- Tiptap Core Extensions ---
 import { StarterKit } from '@tiptap/starter-kit';
@@ -65,6 +66,8 @@ import {
 import { MarkButton } from '@/components/tiptap-ui/mark-button';
 import { TextAlignButton } from '@/components/tiptap-ui/text-align-button';
 import { UndoRedoButton } from '@/components/tiptap-ui/undo-redo-button';
+import { SEOButton } from '@/components/tiptap-ui/seo-button';
+import { PublishingDialog } from '@/components/publishing/PublishingDialog';
 
 // --- Lib ---
 import { handleImageUpload, MAX_FILE_SIZE } from '@/lib/tiptap-utils';
@@ -105,12 +108,14 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const [targetKeyword, setTargetKeyword] = useState(initialDocument?.targetKeyword || '');
   const [keywords, setKeywords] = useState<string[]>(initialDocument?.keywords || []);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
+  const [isSEOModalOpen, setIsSEOModalOpen] = useState(false);
 
   const editor = useEditor({
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        class: 'prose prose-lg max-w-none focus:outline-none min-h-[400px] p-8',
+        class: 'prose prose-lg max-w-none focus:outline-none min-h-full p-8',
         autocomplete: 'off',
         autocorrect: 'off',
         autocapitalize: 'off',
@@ -261,20 +266,28 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   };
 
   const handlePreview = () => {
-    console.log('Preview functionality coming soon');
-    // TODO: Implement preview
+    // Implement preview logic
+    console.log('Previewing...');
   };
 
   const handlePublish = () => {
-    console.log('Publishing document...');
-    // TODO: Implement publish functionality
+    setIsPublishingDialogOpen(true);
   };
 
+  if (!editor) {
+    return <div>Loading editor...</div>;
+  }
+
   return (
-    <div className="h-full flex bg-gray-50">
-      {/* Main Editor Area */}
-      <div className="flex-1 flex flex-col relative"> {/* Make this container relative for status bar */}
-        {/* Document Header */}
+    <div className="flex h-full bg-gray-50">
+      {/* Main editor column */}
+      <motion.div 
+        className="flex-1 flex flex-col relative"
+        animate={{ 
+          marginRight: rightPanelOpen ? 0 : 0,
+        }}
+        transition={{ duration: 0.3, ease: [0.4, 0.0, 0.2, 1] }}
+      >
         <DocumentHeader
           title={title}
           author={author}
@@ -288,90 +301,53 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
           onToggleRightPanel={() => setRightPanelOpen(!rightPanelOpen)}
         />
 
-        {/* SEO Settings */}
-        <SEOSettings
-          targetKeyword={targetKeyword}
-          keywords={keywords}
-          metaDescription={metaDescription}
-          onTargetKeywordChange={onTargetKeywordChange}
-          onKeywordsChange={onKeywordsChange}
-          onMetaDescriptionChange={onMetaChange}
-        />
-
-        {/* Editor Section */}
-        <div className="flex-1 flex flex-col bg-white">
-          {/* Tiptap Toolbar */}
-          <EditorContext.Provider value={{ editor }}>
-            <Toolbar className="border-b border-gray-200 bg-white px-4">
-              <Spacer />
-
-              <ToolbarGroup>
-                <UndoRedoButton action="undo" />
-                <UndoRedoButton action="redo" />
-              </ToolbarGroup>
-
-              <ToolbarSeparator />
-
-              <ToolbarGroup>
-                <HeadingDropdownMenu levels={[1, 2, 3, 4]} />
-                <ListDropdownMenu types={["bulletList", "orderedList", "taskList"]} />
-                <BlockQuoteButton />
-                <CodeBlockButton />
-              </ToolbarGroup>
-
-              <ToolbarSeparator />
-
-              <ToolbarGroup>
-                <MarkButton type="bold" />
-                <MarkButton type="italic" />
-                <MarkButton type="strike" />
-                <MarkButton type="code" />
-                <MarkButton type="underline" />
-                <ColorHighlightPopover />
-                <LinkPopover />
-              </ToolbarGroup>
-
-              <ToolbarSeparator />
-
-              <ToolbarGroup>
-                <MarkButton type="superscript" />
-                <MarkButton type="subscript" />
-              </ToolbarGroup>
-
-              <ToolbarSeparator />
-
-              <ToolbarGroup>
-                <TextAlignButton align="left" />
-                <TextAlignButton align="center" />
-                <TextAlignButton align="right" />
-                <TextAlignButton align="justify" />
-              </ToolbarGroup>
-
-              <ToolbarSeparator />
-
-              <ToolbarGroup>
-                <ImageUploadButton text="" />
-              </ToolbarGroup>
-
-              <Spacer />
-            </Toolbar>
-
-            {/* Editor Content */}
-            <div className="flex-1 overflow-y-auto">
-              <EditorContent
-                editor={editor}
-                className="simple-editor-content"
-              />
+        <div className="flex-1 overflow-y-auto flex flex-col">
+          <AnimatePresence>
+            <div className="flex-1 max-w-4xl mx-auto w-full flex flex-col">
+              <div className="bg-white rounded-t-lg shadow-lg border flex-1 flex flex-col">
+                <EditorContext.Provider value={{ editor }}>
+                  <Toolbar>
+                    <ToolbarGroup>
+                      <UndoRedoButton action="undo" />
+                      <UndoRedoButton action="redo" />
+                      <ToolbarSeparator />
+                      <HeadingDropdownMenu />
+                      <ToolbarSeparator />
+                      <MarkButton type="bold" tooltip="Bold" />
+                      <MarkButton type="italic" tooltip="Italic" />
+                      <MarkButton type="underline" tooltip="Underline" />
+                      <ToolbarSeparator />
+                      <LinkPopover />
+                      <BlockQuoteButton />
+                      <CodeBlockButton />
+                      <ImageUploadButton />
+                      <ToolbarSeparator />
+                      <ListDropdownMenu />
+                      <ToolbarSeparator />
+                      <TextAlignButton align="left" />
+                      <TextAlignButton align="center" />
+                      <TextAlignButton align="right" />
+                      <TextAlignButton align="justify" />
+                      <ToolbarSeparator />
+                      <SEOButton onClick={() => setIsSEOModalOpen(true)} />
+                    </ToolbarGroup>
+                    <Spacer />
+                    <ColorHighlightPopover />
+                  </Toolbar>
+                </EditorContext.Provider>
+                <div className="flex-1 overflow-y-auto">
+                  <EditorContent editor={editor} className="h-full" />
+                </div>
+              </div>
             </div>
-          </EditorContext.Provider>
+          </AnimatePresence>
         </div>
-        
-        {/* Fixed Status Bar - Only for editor area */}
-        <EditorStatusBar />
-      </div>
 
-      {/* Right Panel */}
-      <AnimatePresence>
+        <EditorStatusBar />
+      </motion.div>
+
+      {/* Right panel */}
+      <AnimatePresence mode="wait">
         {rightPanelOpen && (
           <RightPanel
             documentId={documentId}
@@ -384,7 +360,23 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
           />
         )}
       </AnimatePresence>
-      
+
+      <SEOModal
+        isOpen={isSEOModalOpen}
+        onClose={() => setIsSEOModalOpen(false)}
+        targetKeyword={targetKeyword}
+        keywords={keywords}
+        metaDescription={metaDescription}
+        onTargetKeywordChange={onTargetKeywordChange}
+        onKeywordsChange={onKeywordsChange}
+        onMetaDescriptionChange={onMetaChange}
+      />
+
+      <PublishingDialog
+        documentId={documentId}
+        isOpen={isPublishingDialogOpen}
+        onClose={() => setIsPublishingDialogOpen(false)}
+      />
     </div>
   );
 } 

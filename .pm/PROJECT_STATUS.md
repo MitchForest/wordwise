@@ -1,42 +1,49 @@
 # Project Status
 
-**Last Updated:** 2024-07-31
-**Current Sprint:** Sprint 006: WordPress Publishing MVP
-**Current Epic:** Epic 1: Local-First Analysis Refactor (Completed)
+## Current Work
+**Sprint:** 006 - WordPress Publishing MVP + User Settings System
+**Status:** In Progress
+**Last Updated:** 2024-12-16
 
-## Active Work
-We have completed the full architectural refactor of the analysis engine, culminating in a highly responsive and stable event-driven system. The next phase of the project focuses on integrating with third-party services, starting with a WordPress publishing MVP.
+### Recent Activity
+- Fixed duplicate suggestion key React errors
+- Implemented position-based IDs for suggestions
+- Consolidated duplicate position mapper utilities
+- Enhanced suggestion deduplication logic
 
-## Recent Completions
-- **Sprint 005:** Multi-Tiered Analysis & UI Stability - 2024-07-31
-- **Sprint 004:** UI Polish & Document Metrics - 2024-07-29
-- **Sprint 003:** Local Style & Basic Grammar - 2024-07-28
-- **Sprint 002:** Local Spelling Implementation - 2024-07-27
-- **Sprint 001:** Foundation & Cleanup - 2024-07-26
+### Completed Work
+- ✅ WordPress publishing backend (API, encryption, database)
+- ✅ Publishing UI components (dialog, integration setup)
+- ✅ Fixed layout issues (status bar, header positioning)
+- ✅ Improved UI with full-height editor and SEO modal
+- ✅ Basic settings page structure
+- ✅ Fixed duplicate suggestion keys (Sprint 005, Phase 15)
 
-## Upcoming Priorities
-1. **Sprint 006:** Establish a secure connection to the WordPress REST API using user-provided credentials.
-2. **Sprint 006:** Implement the UI for a "Publish to WordPress" modal.
-3. **Sprint 006:** Create a service to transform Tiptap document JSON into WordPress-compatible HTML.
+### In Progress
+- User settings system implementation
+- Writing preferences configuration
+- Content templates for different blog types
+- Moving WordPress integration to settings
 
-## Blockers & Decisions Needed
-- None at this time.
+### Completed Sprints
+1. ✅ Sprint 001: Unified Analysis Architecture
+2. ✅ Sprint 002: Real-time Spell Check & Debounced Fast Analysis  
+3. ✅ Sprint 003: Enhanced Suggestions Panel & Context Menu
+4. ✅ Sprint 004: React Key Collision Fix
+5. ✅ Sprint 005: Multi-tiered Analysis & Responsive Status Bar (including Phase 15 fix)
+6. 🚧 Sprint 006: WordPress Publishing MVP + User Settings
 
-## Quick Links
-- **Completed Epic:** [Epic 1: Local-First Analysis Refactor](./epics/epic-001-local-first-analysis-refactor/epic-summary.md)
-- **Current Sprint:** [Sprint 6: WordPress Publishing MVP](./epics/epic-002-publishing-integrations/sprint-006-wordpress-publishing-mvp.md)
+## Architecture Notes
+- Local-first architecture with tiered analysis (spell → fast → deep)
+- Unified suggestion system with position-based IDs (no more duplicates!)
+- WordPress publishing integration with encrypted credentials
+- Responsive layout with collapsible panels
+- Clean SEO interface with modal for better UX
+- Comprehensive settings system in development
 
-- **Last Modified**: 2024-07-25
-- **Current State**: Sprint 005 Complete (Pending Final Review)
-- **Current Work**:
-  - Completed refactor of the analysis engine to a server-side API.
-  - Completed UI polish for the status bar and suggestions panel.
-  - Implemented all interactive features and metrics as per the sprint plan.
-- **Next Steps**: Begin with Phase 1: Fixing the stale suggestions bug and refactoring the analysis hook.
-- **Blockers**: None.
-
-## Decisions & Blockers
-
-- **Decision**: The single-debounce analysis model has been deprecated in favor of a multi-tiered, context-aware trigger system to improve responsiveness.
-- **Decision**: The "overall score" metric in the status bar will be replaced with more granular and actionable metrics (Grammar, SEO, Readability).
-- **Blocker**: None. 
+## Next Steps
+- Complete user settings implementation
+- Create content template system
+- Integrate templates with new document creation
+- Test WordPress publishing functionality
+- Performance optimizations for large documents 

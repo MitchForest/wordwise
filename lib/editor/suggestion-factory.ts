@@ -1,3 +1,9 @@
+/**
+ * @file lib/editor/suggestion-factory.ts
+ * @purpose Defines a factory function for creating standardized `UnifiedSuggestion`
+ * objects. This ensures consistency and stability of suggestion data across
+ * all analysis services.
+ */
 import {
   UnifiedSuggestion,
   SuggestionAction,
@@ -7,28 +13,15 @@ import {
 } from '@/types/suggestions';
 
 /**
- * A simple, non-crypto hash function to create a stable identifier.
- * This is used to generate a unique ID from the suggestion's content,
- * making it resilient to position changes in the document.
- * @param str The string to hash.
- * @returns A 32-bit integer hash.
- */
-function simpleHash(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0; // Convert to 32bit integer
-  }
-  return Math.abs(hash); // Return absolute value to keep it positive
-}
-
-/**
- * Creates a standardized UnifiedSuggestion object with a truly stable, essence-based ID.
- * @param from - The starting position of the suggestion.
- * @param to - The ending position of the suggestion.
+ * Creates a standardized UnifiedSuggestion object with a position-based ID.
+ * This ensures that the same error at the same position always gets the same ID,
+ * preventing duplicate key errors in React when the same error is detected by
+ * multiple analysis tiers.
+ * 
+ * @param from - The starting position of the suggestion. Can be `undefined` for document-level suggestions.
+ * @param to - The ending position of the suggestion. Can be `undefined` for document-level suggestions.
  * @param originalText - The text that the suggestion is for.
- * @param contextSnippet - A snippet of surrounding context for the suggestion.
+ * @param contextSnippet - A snippet of surrounding context (kept for backwards compatibility but not used in ID).
  * @param category - The main category of the suggestion.
  * @param subCategory - The specific sub-category for semantic ID creation.
  * @param ruleId - The canonical, hardcoded ID for the specific rule being violated.
@@ -39,8 +32,8 @@ function simpleHash(str: string): number {
  * @returns A standardized UnifiedSuggestion object.
  */
 export const createSuggestion = (
-  from: number,
-  to: number,
+  from: number | undefined,
+  to: number | undefined,
   originalText: string,
   contextSnippet: string,
   category: SuggestionCategory,
@@ -51,21 +44,28 @@ export const createSuggestion = (
   actions: SuggestionAction[] = [],
   severity: 'error' | 'warning' | 'suggestion' = 'suggestion',
 ): UnifiedSuggestion => {
-  // The hash is now created from the rule's ID, the specific text that was
-  // flagged, and a snippet of surrounding context. This creates a truly stable ID
-  // that is resilient to position changes and unique even for repeated errors.
-  const contentHash = simpleHash(`${ruleId}-${originalText.trim()}-${contextSnippet}`);
+  // Use position-based ID to ensure same error at same position always has same ID
+  // This prevents duplicate keys when real-time and debounced checks find the same error
+  const positionKey = from !== undefined ? from : 'global';
+  const id = `${category}:${subCategory}:${ruleId}:${positionKey}`;
   
-  return {
-    id: `${category}:${subCategory}:${contentHash}`,
+  const suggestion: UnifiedSuggestion = {
+    id,
     ruleId,
     category,
     subCategory,
     severity,
     title,
     message,
-    position: { start: from, end: to },
     context: { text: originalText },
     actions,
   };
+
+  // Only add the position object if `from` and `to` are valid numbers.
+  // This allows for document-level suggestions that won't be sorted to the top.
+  if (from !== undefined && to !== undefined) {
+    suggestion.position = { start: from, end: to };
+  }
+
+  return suggestion;
 }; 

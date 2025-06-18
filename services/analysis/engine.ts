@@ -77,7 +77,11 @@ export class UnifiedAnalysisEngine {
         const from = pos + match.index;
         const to = from + word.length;
         const suggested = spellChecker.suggest(word);
-        const contextSnippet = `${node.text.substring(match.index - 10, match.index)}...${node.text.substring(to - pos, to - pos + 10)}`;
+        
+        // Fixed context snippet generation with proper boundary checks
+        const startIdx = Math.max(0, match.index - 10);
+        const endIdx = Math.min(node.text.length, match.index + word.length + 10);
+        const contextSnippet = node.text.substring(startIdx, endIdx);
   
         suggestions.push(
           createSuggestion(
@@ -202,8 +206,12 @@ export class UnifiedAnalysisEngine {
         const from = pos + match.index!;
         const to = from + word.length;
         const suggested = spellChecker.suggest(word);
-        const contextSnippet = `${node.text.substring(match.index! - 10, match.index!)}...${node.text.substring(to - pos, to - pos + 10)}`;
-
+        
+        // Fixed context snippet generation with proper boundary checks
+        const startIdx = Math.max(0, match.index! - 10);
+        const endIdx = Math.min(node.text.length, match.index! + word.length + 10);
+        const contextSnippet = node.text.substring(startIdx, endIdx);
+  
         suggestions.push(
           createSuggestion(
             from,

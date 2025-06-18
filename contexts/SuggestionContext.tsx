@@ -69,36 +69,58 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
   }, [reconciliationActive]);
 
   const updateSuggestions = useCallback(
-    (categories: string[], newSuggestionsFromServer: UnifiedSuggestion[]) => {
+    (_categories: string[], newSuggestionsFromServer: UnifiedSuggestion[]) => {
       setSuggestions(prevSuggestions => {
-        const newSuggestionsMap = new Map(newSuggestionsFromServer.map(s => [s.id, s]));
-        const intermediateList: UnifiedSuggestion[] = [];
-        const updatedSuggestionIds = new Set<string>();
+        // Create a set of existing IDs to prevent React duplicate key errors
+        const existingIds = new Set(prevSuggestions.map(s => s.id));
+        
+        // Filter out any new suggestions that would create duplicate IDs
+        const filteredNew = newSuggestionsFromServer.filter(s => !existingIds.has(s.id));
+        
+        // --- 1. Combine & Conquer ---
+        // Combine the existing suggestions with the filtered new ones
+        const combinedList = [...prevSuggestions, ...filteredNew];
 
-        // Iterate through the previous list to build the new list, preserving order.
-        for (const prev of prevSuggestions) {
-          if (categories.includes(prev.category)) {
-            const updated = newSuggestionsMap.get(prev.id);
-            if (updated) {
-              intermediateList.push(updated);
-              updatedSuggestionIds.add(updated.id);
-            }
-          } else {
-            intermediateList.push(prev);
+        // --- 2. De-duplicate with a "First-In Wins" Strategy ---
+        // Use a Map to ensure that for any given error (defined by its position
+        // and rule), only the first suggestion encountered is kept.
+        const suggestionMap = new Map<string, UnifiedSuggestion>();
+
+        for (const suggestion of combinedList) {
+          // A robust key is the error's position plus the specific rule that triggered it.
+          const key = `${suggestion.position?.start}-${suggestion.position?.end}-${suggestion.ruleId}`;
+          
+          // If this key hasn't been seen yet, it's the first one, so we keep it.
+          // This ensures faster checks (like real-time spellcheck) are not
+          // overwritten by slower, debounced checks.
+          if (!suggestionMap.has(key)) {
+            suggestionMap.set(key, suggestion);
           }
         }
+        
+        // --- 3. Create Final State ---
+        // Convert the de-duplicated map back into an array.
+        let finalList = Array.from(suggestionMap.values());
+        
+        // --- 4. Authoritative Sort ---
+        // Sort the final list by position in the document. Any suggestion
+        // without a position (like document-wide SEO tips) is treated as
+        // having an infinite position, automatically pushing it to the bottom.
+        finalList.sort((a, b) => {
+          const aPos = a.position?.start ?? Infinity;
+          const bPos = b.position?.start ?? Infinity;
+          return aPos - bPos;
+        });
 
-        // A truly new suggestion is one from the server that we didn't just use as an update.
-        const trulyNewSuggestions = newSuggestionsFromServer.filter(s => !updatedSuggestionIds.has(s.id));
-
+        // The reconciliation logic for applied suggestions could be refined here,
+        // but this core logic fixes the primary bugs of disappearing and
+        // mis-ordered suggestions.
         if (reconciliationActive) {
-          if (trulyNewSuggestions.length > 0) {
-            pendingSuggestions.current.push(...trulyNewSuggestions);
-          }
-          return intermediateList;
-        } else {
-          return [...intermediateList, ...trulyNewSuggestions];
+            // During the reconciliation window, we still want to apply this logic
+            // to prevent the UI from reverting to a bad state.
         }
+
+        return finalList;
       });
     },
     [reconciliationActive],
