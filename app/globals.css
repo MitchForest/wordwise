@@ -273,53 +273,35 @@ html {
 /* Floating UI styles */
 [data-floating-ui-portal] {
   position: relative;
-  z-index: 1000;
+  z-index: 9999;
 }
 
-/* Grammar decoration styles */
-.grammar-decoration.grammar-spelling {
-  text-decoration: underline;
-  text-decoration-color: hsl(var(--destructive));
-}
-
-.grammar-decoration.grammar-grammar {
-  text-decoration: underline;
-  text-decoration-style: wavy;
-  text-decoration-color: hsl(var(--chart-1));
-}
-
-.grammar-decoration.grammar-style {
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-decoration-color: hsl(var(--chart-2));
-}
-
-.grammar-decoration.grammar-seo {
-  text-decoration: underline;
-  text-decoration-style: dashed;
-  text-decoration-color: hsl(var(--chart-4));
-}
-
-.grammar-error {
-  @apply bg-destructive/20;
-  text-decoration-color: hsl(var(--destructive));
+/* 
+  Increased specificity by prefixing with .ProseMirror to ensure these styles
+  are not overridden by default editor styles.
+  Simplified class names for easier generation.
+*/
+.ProseMirror .suggestion-spelling {
   text-decoration-line: underline;
-  border-bottom: 2px wavy red;
-  cursor: pointer;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--destructive);
+  text-decoration-thickness: 1.5px;
 }
-
-.grammar-warning {
-  border-bottom: 2px wavy orange;
-  cursor: pointer;
+.ProseMirror .suggestion-grammar {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--chart-1);
+  text-decoration-thickness: 1.5px;
 }
-
-.grammar-suggestion {
-  border-bottom: 2px wavy blue;
-  cursor: pointer;
+.ProseMirror .suggestion-style {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--chart-2);
+  text-decoration-thickness: 1.5px;
 }
-
-.grammar-error:hover,
-.grammar-warning:hover,
-.grammar-suggestion:hover {
-  background-color: rgba(255, 0, 0, 0.1);
+.ProseMirror .suggestion-seo {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--chart-4);
+  text-decoration-thickness: 1.5px;
 }

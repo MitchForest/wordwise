@@ -1,1 +1,0 @@
-ALTER TABLE "documents" RENAME COLUMN "readability_score" TO "reading_level";

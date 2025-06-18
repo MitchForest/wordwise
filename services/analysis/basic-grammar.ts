@@ -1,4 +1,4 @@
-import { UnifiedSuggestion } from '@/types/suggestions';
+import { UnifiedSuggestion, GRAMMAR_SUB_CATEGORY } from '@/types/suggestions';
 import { createSuggestion } from '@/lib/editor/suggestion-factory';
 
 export interface BasicGrammarIssue {
@@ -62,7 +62,7 @@ export class BasicGrammarChecker {
       });
     }
     
-    // Check for lowercase "I" when used as pronoun
+    // Check for lowercase "I" when used as a pronoun
     const iPattern = /\bi\b/g;
     while ((match = iPattern.exec(text)) !== null) {
       issues.push({
@@ -178,20 +178,25 @@ export class BasicGrammarChecker {
         const from = pos + issue.position;
         const to = from + issue.length;
         const errorText = text.substring(issue.position, issue.position + issue.length);
+        const ruleId = `grammar/${issue.type}`;
+        const contextSnippet = `${text.substring(issue.position - 10, issue.position)}...${text.substring(issue.position + issue.length, issue.position + issue.length + 10)}`;
         
         suggestions.push(
           createSuggestion(
             from,
             to,
             errorText,
+            contextSnippet,
             'grammar',
+            GRAMMAR_SUB_CATEGORY.REPEATED_WORD,
+            ruleId,
             `${issue.type.charAt(0).toUpperCase() + issue.type.slice(1)} Issue`,
             issue.message,
             issue.suggestions.map(s => ({
               label: `Change to "${s}"`,
               type: 'fix',
               value: s,
-              handler: () => {}, // Placeholder
+              handler: () => {},
             })),
             'warning'
           )
@@ -200,18 +205,23 @@ export class BasicGrammarChecker {
 
       // Repeated word check
       const repeatedWordRegex = /\b(\w+)\s+\1\b/gi;
+      const REPEATED_WORD_RULE_ID = 'grammar/repeated-word';
       let match;
       while ((match = repeatedWordRegex.exec(text)) !== null) {
         const repeatedWord = match[1];
         const from = pos + match.index;
         const to = from + match[0].length;
+        const contextSnippet = `${text.substring(match.index - 10, match.index)}...${text.substring(to - pos, to - pos + 10)}`;
 
         suggestions.push(
           createSuggestion(
             from,
             to,
             match[0],
+            contextSnippet,
             'grammar',
+            GRAMMAR_SUB_CATEGORY.REPEATED_WORD,
+            REPEATED_WORD_RULE_ID,
             'Repeated Word',
             `The word "${repeatedWord}" is repeated.`,
             [
@@ -219,7 +229,7 @@ export class BasicGrammarChecker {
                 label: `Remove repetition`,
                 type: 'fix',
                 value: repeatedWord,
-                handler: () => {}, // Placeholder
+                handler: () => {},
               },
             ],
             'warning'

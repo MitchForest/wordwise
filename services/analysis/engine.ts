@@ -9,11 +9,13 @@ import { SEOAnalyzer } from './seo';
 import { StyleAnalyzer } from './style';
 import { BasicGrammarChecker } from './basic-grammar';
 import { DocumentMetricAnalyzer } from './metrics';
-import { UnifiedSuggestion } from '@/types/suggestions';
+import { UnifiedSuggestion, SPELLING_SUB_CATEGORY } from '@/types/suggestions';
 import { spellChecker } from './spellcheck';
 import { createSuggestion } from '@/lib/editor/suggestion-factory';
 import { getSchema } from '@tiptap/core';
 import { serverEditorExtensions } from '@/lib/editor/tiptap-extensions.server';
+
+const SPELLCHECK_RULE_ID = 'spelling/misspelling';
 
 export interface DocumentMetrics {
   grammarScore: number;
@@ -75,13 +77,17 @@ export class UnifiedAnalysisEngine {
         const from = pos + match.index;
         const to = from + word.length;
         const suggested = spellChecker.suggest(word);
+        const contextSnippet = `${node.text.substring(match.index - 10, match.index)}...${node.text.substring(to - pos, to - pos + 10)}`;
   
         suggestions.push(
           createSuggestion(
             from,
             to,
             word,
+            contextSnippet,
             'spelling',
+            SPELLING_SUB_CATEGORY.MISSPELLING,
+            SPELLCHECK_RULE_ID,
             'Spelling Error',
             `"${word}" may be misspelled.`,
             suggested.map(s => ({
@@ -196,13 +202,17 @@ export class UnifiedAnalysisEngine {
         const from = pos + match.index!;
         const to = from + word.length;
         const suggested = spellChecker.suggest(word);
+        const contextSnippet = `${node.text.substring(match.index! - 10, match.index!)}...${node.text.substring(to - pos, to - pos + 10)}`;
 
         suggestions.push(
           createSuggestion(
             from,
             to,
             word,
+            contextSnippet,
             'spelling',
+            SPELLING_SUB_CATEGORY.MISSPELLING,
+            SPELLCHECK_RULE_ID,
             'Spelling Error',
             `"${word}" may be misspelled.`,
             suggested.map(s => ({

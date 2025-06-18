@@ -1,5 +1,5 @@
 import writeGood from 'write-good';
-import { UnifiedSuggestion } from '@/types/suggestions';
+import { UnifiedSuggestion, STYLE_SUB_CATEGORY, StyleSubCategory } from '@/types/suggestions';
 import { createSuggestion } from '@/lib/editor/suggestion-factory';
 
 // The type definitions for 'write-good' are incorrect, so we use a direct require.
@@ -16,6 +16,23 @@ const removableWords = [
   'is a word to avoid',
   'is redundant',
 ];
+
+function mapReasonToSubCategory(reason: string): StyleSubCategory {
+  const lowerCaseReason = reason.toLowerCase();
+  if (lowerCaseReason.includes('passive voice')) return STYLE_SUB_CATEGORY.PASSIVE_VOICE;
+  if (lowerCaseReason.includes('weasel word')) return STYLE_SUB_CATEGORY.WEASEL_WORDS;
+  if (lowerCaseReason.includes('lexical illusion')) return STYLE_SUB_CATEGORY.LEXICAL_ILLUSIONS;
+  if (lowerCaseReason.includes('cliche')) return STYLE_SUB_CATEGORY.CLICHE;
+  if (lowerCaseReason.includes('so the sentence starts')) return STYLE_SUB_CATEGORY.SO_START;
+  // Default to a general style sub-category if no specific match is found.
+  return STYLE_SUB_CATEGORY.ADVERB_USAGE; 
+}
+
+function mapReasonToRuleId(reason: string): string {
+  const subCategory = mapReasonToSubCategory(reason);
+  // Create a ruleId from the sub-category, e.g., 'style/passive-voice'
+  return `style/${subCategory}`;
+}
 
 export class StyleAnalyzer {
   public run(doc: any): UnifiedSuggestion[] {
@@ -37,6 +54,9 @@ export class StyleAnalyzer {
         const from = pos + suggestion.index;
         const to = from + suggestion.offset;
         const errorText = text.substring(suggestion.index, suggestion.index + suggestion.offset);
+        const subCategory = mapReasonToSubCategory(suggestion.reason);
+        const ruleId = mapReasonToRuleId(suggestion.reason);
+        const contextSnippet = `${text.substring(suggestion.index - 10, suggestion.index)}...${text.substring(suggestion.index + suggestion.offset, suggestion.index + suggestion.offset + 10)}`;
 
         // Check if the suggestion is for a word that can be simply removed.
         const isRemovable = removableWords.some(phrase => suggestion.reason.includes(phrase));
@@ -56,7 +76,10 @@ export class StyleAnalyzer {
             from,
             to,
             errorText,
+            contextSnippet,
             'style',
+            subCategory,
+            ruleId,
             'Style Suggestion',
             suggestion.reason,
             actions,

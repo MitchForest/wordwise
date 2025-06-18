@@ -92,7 +92,13 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const { data: session } = useSession();
   const onDocumentTitleChange = useDocumentTitleUpdate();
   const documentUpdates = useDocumentUpdates();
-  const { suggestions, registerEditorActions, setHoveredSuggestionId, hoveredSuggestionId } = useSuggestions();
+  const {
+    suggestions,
+    registerEditorActions,
+    setHoveredSuggestionId,
+    hoveredSuggestionId,
+    setFocusedSuggestionId,
+  } = useSuggestions();
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [metaDescription, setMetaDescription] = useState(initialDocument?.metaDescription || '');
   const [author, setAuthor] = useState(initialDocument?.author || session?.user?.name || 'Anonymous');
@@ -133,16 +139,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
       Link.configure({ openOnClick: false }),
       EnhancedGrammarDecoration.configure({
         hoveredSuggestionId,
-        onSuggestionClick: (suggestion) => {
-          const suggestionElement = document.getElementById(`suggestion-${suggestion.id}`);
-          if (suggestionElement) {
-            suggestionElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            suggestionElement.classList.add('ring-2', 'ring-primary');
-            setTimeout(() => {
-              suggestionElement.classList.remove('ring-2', 'ring-primary');
-            }, 2000);
-          }
-        },
+        onSuggestionClick: (suggestion) => setFocusedSuggestionId(suggestion.id),
         onHover: (id) => setHoveredSuggestionId(id),
         onLeave: () => setHoveredSuggestionId(null),
       }),

@@ -99,13 +99,13 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
           handleDOMEvents: {
             click: (view, event) => {
               const target = event.target as HTMLElement;
-              if (target.classList.contains('grammar-decoration')) {
-                const suggestionId = target.getAttribute('data-suggestion-id');
+              const suggestionId = target.getAttribute('data-suggestion-id');
+              if (target.matches('[data-suggestion-id]')) {
                 const pluginState = pluginKey.getState(view.state);
                 const suggestion = pluginState?.suggestions.find(
-                  (s: UnifiedSuggestion) => s.id === suggestionId
+                  (s: UnifiedSuggestion) => s.id === suggestionId,
                 );
-                
+
                 if (suggestion && options.onSuggestionClick) {
                   options.onSuggestionClick(suggestion);
                   return true;
@@ -115,7 +115,7 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
             },
             mouseover: (view, event) => {
               const target = event.target as HTMLElement;
-              if (target.classList.contains('grammar-decoration')) {
+              if (target.matches('[data-suggestion-id]')) {
                 const suggestionId = target.getAttribute('data-suggestion-id');
                 if (suggestionId) {
                   options.onHover(suggestionId);
@@ -125,7 +125,7 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
             },
             mouseout: (view, event) => {
               const target = event.target as HTMLElement;
-              if (target.classList.contains('grammar-decoration')) {
+              if (target.matches('[data-suggestion-id]')) {
                 options.onLeave();
               }
               return false;
@@ -157,19 +157,16 @@ export function clearSuggestions(editor: Editor) {
     .run();
 }
 
-// Get decoration class based on severity and category
+// Get decoration class based on category and hover state
 function getDecorationClass(suggestion: UnifiedSuggestion, hoveredId: string | null): string {
-  const baseClass = 'grammar-decoration';
-  const categoryClass = `grammar-${suggestion.category}`;
+  // Use the new, simplified class structure
+  const categoryClass = `suggestion-${suggestion.category}`;
   const isHovered = suggestion.id === hoveredId;
-  
-  // No severity class for now to simplify, can be added back later.
-  // const severityClass = `grammar-${suggestion.severity}`;
-  
-  let finalClass = `${baseClass} ${categoryClass}`;
+
+  let finalClass = categoryClass;
   if (isHovered) {
     finalClass += ' bg-muted';
   }
-  
+
   return finalClass;
 }

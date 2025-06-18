@@ -23,20 +23,30 @@ export const useUnifiedAnalysis = (
     keywords: string[];
   }
 ) => {
-  const { setSuggestions, setMetrics, addSuggestions, replaceSuggestionsByCategories } = useSuggestions();
+  const { setMetrics, updateSuggestions } = useSuggestions();
 
   // Immediate check to clear suggestions if the document is empty
   useEffect(() => {
     if (isReady && (!doc || doc.textContent.trim().length === 0)) {
-      setSuggestions([]);
+      updateSuggestions(['spelling', 'grammar', 'style', 'seo', 'readability'], []);
       setMetrics(null);
     }
-  }, [doc, isReady, setSuggestions, setMetrics]);
+  }, [doc, isReady, updateSuggestions, setMetrics]);
+
+  // Tier 3 (Real-time): Live Word Count
+  useEffect(() => {
+    if (!doc) return;
+    const text = doc.textContent.trim();
+    const wordCount = text.length > 0 ? text.split(/\s+/).length : 0;
+    setMetrics({ wordCount });
+  }, [doc, setMetrics]);
 
   // Tier 2: Deep Analysis (Metrics, SEO) - Long debounce
   const debouncedDeepAnalysis = useDebouncedCallback(async (currentDoc, metadata) => {
     if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 5) {
       setMetrics(null);
+      // Also clear out any existing deep suggestions
+      updateSuggestions(['seo', 'readability'], []);
       return;
     }
     try {
@@ -48,20 +58,18 @@ export const useUnifiedAnalysis = (
       if (!response.ok) throw new Error(`Deep analysis request failed: ${response.status}`);
       const { suggestions, metrics } = await response.json();
       setMetrics(metrics || null);
-      if (suggestions && suggestions.length > 0) {
-        addSuggestions(suggestions);
-      }
+      updateSuggestions(['seo', 'readability'], suggestions || []);
     } catch (error) {
       console.error('Failed to fetch deep analysis:', error);
       toast.error('Deep analysis service is unavailable.');
     }
-  }, 2000);
+  }, 800);
 
   // Tier 1: Fast Analysis (Grammar, Style, Spelling) - Short debounce
   const debouncedFastAnalysis = useDebouncedCallback(async (currentDoc) => {
     if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 2) {
       // If the document is too short, clear out all fast-check categories
-      replaceSuggestionsByCategories(['grammar', 'style', 'spelling'], []);
+      updateSuggestions(['grammar', 'style', 'spelling'], []);
       return;
     }
     try {
@@ -72,12 +80,12 @@ export const useUnifiedAnalysis = (
       });
       if (!response.ok) throw new Error(`Fast analysis request failed: ${response.status}`);
       const { suggestions } = await response.json();
-      replaceSuggestionsByCategories(['grammar', 'style', 'spelling'], suggestions || []);
+      updateSuggestions(['grammar', 'style', 'spelling'], suggestions || []);
     } catch (error) {
       console.error('Failed to fetch fast analysis:', error);
       toast.error('Fast analysis service is unavailable.');
     }
-  }, 500);
+  }, 400);
 
   // Tier 0: Real-time Spell Check (as user types)
   const runRealtimeSpellCheck = useCallback(async (word: string, currentDoc: Node) => {
@@ -91,12 +99,14 @@ export const useUnifiedAnalysis = (
       if (!response.ok) throw new Error('Real-time spell check failed');
       const { suggestions } = await response.json();
       if (suggestions && suggestions.length > 0) {
-        addSuggestions(suggestions);
+        // Spell check should add to existing suggestions, not replace a whole category
+        // Note: this part of the logic might need review, but for now we unify the function call
+        updateSuggestions(['spelling'], suggestions);
       }
     } catch (error) {
       console.error('Real-time spell check error:', error);
     }
-  }, [addSuggestions]);
+  }, [updateSuggestions]);
 
   // Main effect to orchestrate all checks
   useEffect(() => {

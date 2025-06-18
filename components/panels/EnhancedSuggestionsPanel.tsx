@@ -3,24 +3,36 @@
 import { useSuggestions } from '@/contexts/SuggestionContext';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckIcon, XIcon, SpellCheck, PenTool, TextSearch, ShieldCheck } from 'lucide-react';
+import { CheckIcon, XIcon, SpellCheck, PenTool, TextSearch, ShieldCheck, FilterIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Toggle } from '@/components/ui/toggle';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import { useEffect, useRef } from 'react';
 
 const categoryConfig = {
   spelling: {
+    label: 'Spelling',
     icon: SpellCheck,
     color: 'text-destructive',
   },
   grammar: {
+    label: 'Grammar',
     icon: PenTool,
     color: 'text-chart-1',
   },
   style: {
+    label: 'Style',
     icon: TextSearch,
     color: 'text-chart-2',
   },
   seo: {
+    label: 'SEO',
     icon: ShieldCheck,
     color: 'text-chart-4',
   },
@@ -46,15 +58,26 @@ const categoryColorMap: Record<string, { border: string; text: string }> = {
 };
 
 export const EnhancedSuggestionsPanel = () => {
-  const { 
-    filteredSuggestions, 
-    applySuggestion, 
+  const {
+    visibleSuggestions,
+    applySuggestion,
     ignoreSuggestion,
     hoveredSuggestionId,
     setHoveredSuggestionId,
+    focusedSuggestionId,
+    setFocusedSuggestionId,
     filter,
     setFilter,
   } = useSuggestions();
+
+  const suggestionRefs = useRef(new Map<string, HTMLDivElement>());
+
+  useEffect(() => {
+    if (focusedSuggestionId) {
+      const node = suggestionRefs.current.get(focusedSuggestionId);
+      node?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [focusedSuggestionId]);
 
   const handleFilterToggle = (category: string) => {
     const newCategories = filter.categories.includes(category)
@@ -71,10 +94,38 @@ export const EnhancedSuggestionsPanel = () => {
     ignoreSuggestion(suggestionId);
   };
 
-  if (filteredSuggestions.length === 0) {
+  const handleCardClick = (suggestionId: string) => {
+    setHoveredSuggestionId(suggestionId);
+    setFocusedSuggestionId(suggestionId);
+  };
+
+  if (visibleSuggestions.length === 0) {
     return (
       <div className="flex flex-col h-full">
-        <PanelHeader onFilterToggle={handleFilterToggle} activeFilters={filter.categories} />
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="text-lg font-semibold">Suggestions</h3>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <FilterIcon className="w-4 h-4 mr-2" />
+                Filters
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuLabel>Show Categories</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {Object.entries(categoryConfig).map(([key, { label }]) => (
+                <DropdownMenuCheckboxItem
+                  key={key}
+                  checked={filter.categories.includes(key)}
+                  onCheckedChange={() => handleFilterToggle(key)}
+                >
+                  {label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <div className="flex flex-col items-center justify-center flex-grow p-4 text-center">
           <p className="text-lg font-semibold">All Clear!</p>
           <p className="text-sm text-muted-foreground">No suggestions match the current filters.</p>
@@ -85,32 +136,58 @@ export const EnhancedSuggestionsPanel = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <PanelHeader onFilterToggle={handleFilterToggle} activeFilters={filter.categories} />
+      <div className="flex items-center justify-between p-4 border-b">
+        <h3 className="text-lg font-semibold">Suggestions</h3>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm">
+              <FilterIcon className="w-4 h-4 mr-2" />
+              Filters
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuLabel>Show Categories</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {Object.entries(categoryConfig).map(([key, { label }]) => (
+              <DropdownMenuCheckboxItem
+                key={key}
+                checked={filter.categories.includes(key)}
+                onCheckedChange={() => handleFilterToggle(key)}
+              >
+                {label}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       <div className="relative flex-grow p-4 space-y-4 overflow-y-auto">
-        <AnimatePresence>
-          {filteredSuggestions.map(suggestion => {
+        <AnimatePresence initial={false}>
+          {visibleSuggestions.map((suggestion) => {
             const colorClasses = categoryColorMap[suggestion.category] || { border: 'border-gray-700', text: 'text-primary' };
             const isHovered = suggestion.id === hoveredSuggestionId;
-            
+
             return (
               <motion.div
                 key={suggestion.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
+                ref={(node) => {
+                  if (node) suggestionRefs.current.set(suggestion.id, node);
+                  else suggestionRefs.current.delete(suggestion.id);
+                }}
                 layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.2 } }}
                 onMouseEnter={() => setHoveredSuggestionId(suggestion.id)}
                 onMouseLeave={() => setHoveredSuggestionId(null)}
+                onClick={() => handleCardClick(suggestion.id)}
                 className={cn(
-                  'p-4 transition-all duration-300 bg-background border-l-4 rounded-lg shadow-sm',
+                  'p-4 transition-all duration-300 bg-background border-l-4 rounded-lg shadow-sm cursor-pointer',
                   colorClasses.border,
-                  { 'bg-muted': isHovered }
+                  { 'bg-muted': isHovered },
                 )}
               >
                 <div className="flex-1">
-                  <p className={cn('text-sm font-semibold capitalize', colorClasses.text)}>
-                    {suggestion.category}
-                  </p>
+                  <p className={cn('text-sm font-semibold capitalize', colorClasses.text)}>{suggestion.category}</p>
                   <p className="mt-1 text-sm text-foreground/80">{suggestion.message}</p>
                 </div>
 
@@ -129,7 +206,10 @@ export const EnhancedSuggestionsPanel = () => {
                 <div className="flex items-center justify-end mt-4">
                   <Button
                     size="sm"
-                    onClick={() => handleApply(suggestion.id, suggestion.actions[0]?.value || '')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleApply(suggestion.id, suggestion.actions[0]?.value || '');
+                    }}
                     disabled={!suggestion.actions[0]?.value}
                   >
                     <CheckIcon className="w-4 h-4 mr-2" />
@@ -138,7 +218,10 @@ export const EnhancedSuggestionsPanel = () => {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleIgnore(suggestion.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleIgnore(suggestion.id);
+                    }}
                     className="ml-2 text-muted-foreground hover:text-foreground"
                   >
                     <XIcon className="w-4 h-4" />
@@ -148,33 +231,6 @@ export const EnhancedSuggestionsPanel = () => {
             );
           })}
         </AnimatePresence>
-      </div>
-    </div>
-  );
-};
-
-interface PanelHeaderProps {
-  onFilterToggle: (category: string) => void;
-  activeFilters: string[];
-}
-
-const PanelHeader = ({ onFilterToggle, activeFilters }: PanelHeaderProps) => {
-  return (
-    <div className="p-4 border-b">
-      <h3 className="mb-4 text-lg font-semibold">Suggestions</h3>
-      <div className="flex items-center space-x-2">
-        {Object.entries(categoryConfig).map(([key, { icon: Icon, color }]) => (
-          <Toggle
-            key={key}
-            size="sm"
-            pressed={activeFilters.includes(key)}
-            onPressedChange={() => onFilterToggle(key)}
-            className={cn('capitalize', { [color]: activeFilters.includes(key) })}
-          >
-            <Icon className="w-4 h-4 mr-2" />
-            {key}
-          </Toggle>
-        ))}
       </div>
     </div>
   );
