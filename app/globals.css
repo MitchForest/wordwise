@@ -273,11 +273,25 @@ html {
 /* Floating UI styles */
 [data-floating-ui-portal] {
   position: relative;
-  z-index: 9999;
+  z-index: 50;
 }
 
 /* Grammar decoration styles */
+.grammar-decoration.grammar-spelling {
+  @apply underline decoration-red-500 decoration-wavy underline-offset-2;
+}
+
+.grammar-decoration.grammar-grammar {
+  @apply underline decoration-blue-500 decoration-wavy underline-offset-2;
+}
+
+.grammar-decoration.grammar-style {
+  @apply underline decoration-green-500 decoration-wavy underline-offset-2;
+}
+
 .grammar-error {
+  text-decoration-color: hsl(var(--destructive));
+  text-decoration-line: underline;
   border-bottom: 2px wavy red;
   cursor: pointer;
 }

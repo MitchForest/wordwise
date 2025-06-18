@@ -1,9 +1,9 @@
-export { UnifiedAnalysisEngine } from './engine';
-export { TypoCorrector } from './typos';
-export { AnalysisCache } from './cache';
 export { SEOAnalyzer } from './seo';
-export { ReadabilityAnalyzer } from './readability';
 export { StyleAnalyzer } from './style';
+export { BasicGrammarChecker } from './basic-grammar';
+export { spellChecker } from './spellcheck';
+export { DocumentMetricAnalyzer } from './metrics';
+export { UnifiedAnalysisEngine } from './engine';
+export { AnalysisCache, analysisCache } from './cache';
 
 export type { SpellCheckResult } from './spellcheck';
-export type { TypoResult } from './typos';

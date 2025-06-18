@@ -1,5 +1,6 @@
 import writeGood from 'write-good';
 import { UnifiedSuggestion } from '@/types/suggestions';
+import { createSuggestion } from '@/lib/editor/suggestion-factory';
 
 // The type definitions for 'write-good' are incorrect, so we use a direct require.
 const writeGoodSuggestions = require('write-good');
@@ -50,16 +51,18 @@ export class StyleAnalyzer {
           });
         }
 
-        suggestions.push({
-          id: `style-${from}-${suggestion.reason.replace(/\s/g, '-')}`,
-          category: 'style',
-          severity: 'suggestion',
-          title: 'Style Suggestion',
-          message: suggestion.reason,
-          position: { start: from, end: to },
-          context: { text: errorText },
-          actions,
-        });
+        suggestions.push(
+          createSuggestion(
+            from,
+            to,
+            errorText,
+            'style',
+            'Style Suggestion',
+            suggestion.reason,
+            actions,
+            'suggestion'
+          )
+        );
       });
     });
 

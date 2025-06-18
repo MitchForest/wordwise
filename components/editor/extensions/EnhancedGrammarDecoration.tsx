@@ -7,6 +7,8 @@ import type { UnifiedSuggestion } from '@/types/suggestions';
 interface GrammarDecorationOptions {
   suggestions: UnifiedSuggestion[];
   onSuggestionClick?: (suggestion: UnifiedSuggestion) => void;
+  onHover: (id: string) => void;
+  onLeave: () => void;
 }
 
 export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptions>({
@@ -16,6 +18,8 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
     return {
       suggestions: [],
       onSuggestionClick: () => {},
+      onHover: () => {},
+      onLeave: () => {},
     };
   },
   
@@ -104,6 +108,23 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
                   options.onSuggestionClick(suggestion);
                   return true;
                 }
+              }
+              return false;
+            },
+            mouseover: (view, event) => {
+              const target = event.target as HTMLElement;
+              if (target.classList.contains('grammar-decoration')) {
+                const suggestionId = target.getAttribute('data-suggestion-id');
+                if (suggestionId) {
+                  options.onHover(suggestionId);
+                }
+              }
+              return false;
+            },
+            mouseout: (view, event) => {
+              const target = event.target as HTMLElement;
+              if (target.classList.contains('grammar-decoration')) {
+                options.onLeave();
               }
               return false;
             },

@@ -48,8 +48,8 @@ export function RightPanel({
       transition={{ duration: 0.3, ease: 'easeInOut' }}
       className="w-96 h-full bg-white border-l border-neutral-200 flex flex-col overflow-hidden"
     >
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <TabsList className="w-full rounded-none border-b">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+        <TabsList className="w-full rounded-none border-b shrink-0">
           <TabsTrigger value="suggestions" className="flex-1">
             Suggestions
           </TabsTrigger>
@@ -58,7 +58,7 @@ export function RightPanel({
           </TabsTrigger>
         </TabsList>
         
-        <TabsContent value="suggestions" className="flex-1 m-0 min-h-0">
+        <TabsContent value="suggestions" className="flex-1 m-0 min-h-0 overflow-y-auto">
           <EnhancedSuggestionsPanel />
         </TabsContent>
         

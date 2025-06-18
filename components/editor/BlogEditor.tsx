@@ -1,3 +1,9 @@
+/**
+ * @file components/editor/BlogEditor.tsx
+ * @purpose This is the main editor component. It orchestrates all the Tiptap extensions,
+ * the toolbar UI, the header, SEO settings, and the analysis hooks. It is the central
+ * hub for the entire writing and editing experience.
+ */
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -86,7 +92,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const { data: session } = useSession();
   const onDocumentTitleChange = useDocumentTitleUpdate();
   const documentUpdates = useDocumentUpdates();
-  const { suggestions, registerEditorActions } = useSuggestions();
+  const { suggestions, registerEditorActions, setHoveredSuggestionId } = useSuggestions();
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [metaDescription, setMetaDescription] = useState(initialDocument?.metaDescription || '');
   const [author, setAuthor] = useState(initialDocument?.author || session?.user?.name || 'Anonymous');
@@ -136,6 +142,8 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
             }, 2000);
           }
         },
+        onHover: (id) => setHoveredSuggestionId(id),
+        onLeave: () => setHoveredSuggestionId(null),
       }),
     ],
     content: initialDocument?.content || '',
@@ -159,7 +167,12 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const { saveState, lastSaved, handleContentChange, handleTitleChange, handleMetaChange } = useAutoSave(editor, documentId);
 
   // Call our new analysis hook
-  useUnifiedAnalysis(editor?.state.doc, editor?.isEditable || false);
+  const { runRealtimeSpellCheck, debouncedFastAnalysis } = useUnifiedAnalysis(editor?.state.doc || null, editor?.isEditable || false, {
+    title,
+    metaDescription,
+    targetKeyword,
+    keywords,
+  });
 
   useEffect(() => {
     if (editor) {
@@ -192,13 +205,29 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
       const content = editor.getJSON();
       const plainText = editor.getText();
       handleContentChange(content, plainText);
+
+      // Real-time spell check logic
+      const { from, empty } = editor.state.selection;
+      if (empty && from > 1) {
+        const textBefore = editor.state.doc.textBetween(0, from, "\n", " ");
+        const lastChar = textBefore.slice(-1);
+        if (/\s/.test(lastChar)) { // Fired on space
+          const lastWord = textBefore.trim().split(/\s+/).pop();
+          if (lastWord && lastWord.length > 2) {
+            runRealtimeSpellCheck(lastWord, editor.state.doc);
+          }
+        } else if (/[.!?]/.test(lastChar)) { // Fired on sentence end
+          // Trigger fast analysis for the whole document
+          debouncedFastAnalysis(editor.state.doc);
+        }
+      }
     };
 
     editor.on('update', handleUpdate);
     return () => {
       editor.off('update', handleUpdate);
     };
-  }, [editor, handleContentChange]);
+  }, [editor, handleContentChange, runRealtimeSpellCheck, debouncedFastAnalysis]);
 
   // Handle title changes
   const onTitleChange = (newTitle: string) => {

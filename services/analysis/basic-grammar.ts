@@ -1,4 +1,5 @@
 import { UnifiedSuggestion } from '@/types/suggestions';
+import { createSuggestion } from '@/lib/editor/suggestion-factory';
 
 export interface BasicGrammarIssue {
   type: 'capitalization' | 'punctuation' | 'spacing';
@@ -178,21 +179,23 @@ export class BasicGrammarChecker {
         const to = from + issue.length;
         const errorText = text.substring(issue.position, issue.position + issue.length);
         
-        suggestions.push({
-          id: `basic-grammar-${from}-${issue.message.replace(/\s/g, '-')}`,
-          category: 'grammar',
-          severity: 'warning',
-          title: `${issue.type.charAt(0).toUpperCase() + issue.type.slice(1)} Issue`,
-          message: issue.message,
-          position: { start: from, end: to },
-          context: { text: errorText },
-          actions: issue.suggestions.map(s => ({
-            label: `Change to "${s}"`,
-            type: 'fix',
-            value: s,
-            handler: () => {}, // Placeholder
-          })),
-        });
+        suggestions.push(
+          createSuggestion(
+            from,
+            to,
+            errorText,
+            'grammar',
+            `${issue.type.charAt(0).toUpperCase() + issue.type.slice(1)} Issue`,
+            issue.message,
+            issue.suggestions.map(s => ({
+              label: `Change to "${s}"`,
+              type: 'fix',
+              value: s,
+              handler: () => {}, // Placeholder
+            })),
+            'warning'
+          )
+        );
       });
 
       // Repeated word check
@@ -203,23 +206,25 @@ export class BasicGrammarChecker {
         const from = pos + match.index;
         const to = from + match[0].length;
 
-        suggestions.push({
-          id: `grammar-repeated-${from}-${repeatedWord}`,
-          category: 'grammar',
-          severity: 'warning',
-          title: 'Repeated Word',
-          message: `The word "${repeatedWord}" is repeated.`,
-          position: { start: from, end: to },
-          context: { text: match[0] },
-          actions: [
-            {
-              label: `Remove repetition`,
-              type: 'fix',
-              value: repeatedWord,
-              handler: () => {}, // Placeholder
-            },
-          ],
-        });
+        suggestions.push(
+          createSuggestion(
+            from,
+            to,
+            match[0],
+            'grammar',
+            'Repeated Word',
+            `The word "${repeatedWord}" is repeated.`,
+            [
+              {
+                label: `Remove repetition`,
+                type: 'fix',
+                value: repeatedWord,
+                handler: () => {}, // Placeholder
+              },
+            ],
+            'warning'
+          )
+        );
       }
     });
 

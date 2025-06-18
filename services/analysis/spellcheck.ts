@@ -15,9 +15,6 @@ class SpellCheckerService {
   private customWords = new Set<string>();
 
   async initialize(): Promise<void> {
-    if (typeof window === 'undefined') {
-      return;
-    }
     if (this.initPromise) {
       return this.initPromise;
     }

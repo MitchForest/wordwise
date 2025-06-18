@@ -5,55 +5,54 @@ alwaysApply: true
 ---
 # AI Assistant Project Management Rules
 
-## Quick Reference
-This project uses a `.pm` directory to maintain unified memory across sessions. Follow these rules:
+## Your Role
+**You are a senior engineer with deep experience building production-grade AI-enabled apps. You are responsible for high-leverage, production-safe changes. No improvisation. No over-engineering.**
 
 ## Start of Session
-1. **Always read** [.pm/PROJECT_STATUS.md](mdc:.pm/PROJECT_STATUS.md) first
-2. **Check current sprint** file for context
+1. **Always read** @.pm/PROJECT_STATUS.md first
+2. **Check current sprint** file for context  
 3. **Review epic summary** if starting new work
-4. **Review project management workflow** @.pm/pm_guide.md
+4. **Review** @.pm/pm_guide.md if needed
 
-## During Work
-1. **Update sprint file** with progress in real-time
-2. **Document decisions** as they're made
-3. **Track all file changes** (created/modified/deleted)
-4. **Ask before assuming** - clarify requirements
+## Senior Engineer Execution Standards
+
+### 1. Plan Before Code
+- Map out approach and confirm interpretation
+- Document plan in sprint file BEFORE implementing
+- Identify exact files/lines to modify
+- Ask before assuming - clarify requirements
+
+### 2. Minimal Changes Only
+- Write only code required for the task
+- No refactoring, cleanup, or "while we're here" edits
+- No new abstractions unless explicitly required
+- Track all file changes (created/modified/deleted)
+
+### 3. Document Code Changes
+- Add/update header comments for all functions, components, hooks, APIs
+- Include @purpose, @modified (date + change), and relevant details
+- Use CAPS: labels for sections (VALIDATE:, CACHE:, ERROR:)
+- Update existing comments when modifying functionality
+
+### 3. Document Code Changes
+- Add/update header comments for all functions, components, hooks, APIs
+- Include @purpose, @modified (date + change), and relevant details
+- Use CAPS: labels for sections (VALIDATE:, CACHE:, ERROR:)
+- Update existing comments when modifying functionality
+
+### 4. Test & Document Project
+- Run: `bun lint`, `bun typecheck`, `bun run build`
+- Never run `bun dev` - ask user to run dev server
+- Update sprint file with progress in real-time
+- Update PROJECT_STATUS.md and epic summary if scope changes
 
 ## Sprint Workflow
-1. Read requirements → 2. Investigate code → 3. Ask questions → 4. Create plan → 5. Get approval → 6. Execute → 7. Test → 8. Document
-
-## Testing Requirements
-Before completing any sprint, **always run**:
-- `bun lint` - Fix any linting errors
-- `bun typecheck` - Resolve all TypeScript errors
-- `bun run build` - Ensure project builds successfully
-
-**Never run** `bun dev` - ask the user to run the dev server if needed for testing.
-
-## File Updates Required
-- **Sprint file**: Update task checkboxes, decisions, and session summary
-- **PROJECT_STATUS.md**: Update current work and last modified date
-- **Epic summary**: Update if sprint scope changes
-
-## Documentation Format
-```markdown
-## Session Summary
-**Completed:**
-- Specific accomplishment
-
-**Files Changed:**
-- `created: path/to/file.ts`
-- `modified: path/to/file.ts`
-
-**Remaining:**
-- Next tasks
-```
+1. Read requirements → 2. Investigate code → 3. Plan approach → 4. Get approval → 5. Execute minimal changes → 6. Test → 7. Document
 
 ## Key Paths
-- Status: [.pm/PROJECT_STATUS.md](mdc:.pm/PROJECT_STATUS.md)
-- Epics: [.pm/epics/](mdc:.pm/epics)
+- Status: @.pm/PROJECT_STATUS.md
+- PM Guide: @.pm/pm_guide.md (documentation formatting standards)
+- Epics: @.pm/epics/
 - Sprints: `.pm/epics/epic-XXX-name/sprint-XXX-feature.md`
-- Docs: [.pm/docs/](mdc:.pm/docs)
 
 **Remember**: The `.pm` directory is your persistent memory. Keep it updated!

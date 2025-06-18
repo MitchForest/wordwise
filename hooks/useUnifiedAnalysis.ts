@@ -1,59 +1,108 @@
+/**
+ * @file hooks/useUnifiedAnalysis.ts
+ * @purpose This hook is the client-side bridge to the analysis API. It uses a
+ * multi-tiered debounce strategy to provide responsive feedback. Real-time
+ * spell checks are sent instantly, fast checks (style, grammar) are sent after
+ * a short delay, and deep metric analysis is sent after a longer delay.
+ */
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useDebouncedCallback } from 'use-debounce';
-import { UnifiedAnalysisEngine } from '@/services/analysis/engine';
 import { useSuggestions } from '@/contexts/SuggestionContext';
-import { UnifiedSuggestion } from '@/types/suggestions';
+import { Node } from '@tiptap/pm/model';
+import { toast } from 'sonner';
 
-export const useUnifiedAnalysis = (doc: any, isReady: boolean) => {
-  const { setSuggestions } = useSuggestions();
-  const [isEngineReady, setIsEngineReady] = useState(false);
-  const [instantSuggestions, setInstantSuggestions] = useState<UnifiedSuggestion[]>([]);
-  const [fastSuggestions, setFastSuggestions] = useState<UnifiedSuggestion[]>([]);
-  
-  const engine = useMemo(() => new UnifiedAnalysisEngine(), []);
+export const useUnifiedAnalysis = (
+  doc: Node | null,
+  isReady: boolean,
+  documentMetadata: {
+    title: string;
+    metaDescription: string;
+    targetKeyword: string;
+    keywords: string[];
+  }
+) => {
+  const { setSuggestions, setMetrics, addSuggestions } = useSuggestions();
 
-  // Initialize the engine once.
+  // Immediate check to clear suggestions if the document is empty
   useEffect(() => {
-    engine.initialize().then(() => {
-      setIsEngineReady(true);
-    });
-  }, [engine]);
+    if (isReady && (!doc || doc.textContent.trim().length === 0)) {
+      setSuggestions([]);
+      setMetrics(null);
+    }
+  }, [doc, isReady, setSuggestions, setMetrics]);
 
-  // Combine suggestions from all tiers.
-  useEffect(() => {
-    const allSuggestions = [...instantSuggestions, ...fastSuggestions];
-    setSuggestions(allSuggestions);
-  }, [instantSuggestions, fastSuggestions, setSuggestions]);
-
-  // Debounced callback for instant checks (e.g., spelling).
-  const debouncedInstantCheck = useDebouncedCallback((currentDoc) => {
-    if (!isReady || !isEngineReady || !currentDoc) {
-      setInstantSuggestions([]);
+  // Tier 2: Deep Analysis (Metrics, SEO) - Long debounce
+  const debouncedDeepAnalysis = useDebouncedCallback(async (currentDoc, metadata) => {
+    if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 5) {
+      setMetrics(null);
       return;
     }
-    const results = engine.runInstantChecks(currentDoc);
-    setInstantSuggestions(results);
-  }, 100);
+    try {
+      const response = await fetch('/api/analysis/deep', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc: currentDoc.toJSON(), documentMetadata: metadata }),
+      });
+      if (!response.ok) throw new Error(`Deep analysis request failed: ${response.status}`);
+      const { suggestions, metrics } = await response.json();
+      setMetrics(metrics || null);
+      if (suggestions && suggestions.length > 0) {
+        addSuggestions(suggestions);
+      }
+    } catch (error) {
+      console.error('Failed to fetch deep analysis:', error);
+      toast.error('Deep analysis service is unavailable.');
+    }
+  }, 2000);
 
-  // Debounced callback for fast checks (e.g., style, grammar).
-  const debouncedFastCheck = useDebouncedCallback((currentDoc) => {
-    if (!isReady || !isEngineReady || !currentDoc) {
-      setFastSuggestions([]);
+  // Tier 1: Fast Analysis (Grammar, Style) - Short debounce
+  const debouncedFastAnalysis = useDebouncedCallback(async (currentDoc) => {
+    if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 5) {
+      setSuggestions([]);
       return;
     }
-    console.log('[Debug] Running fast checks...');
-    const results = engine.runFastChecks(currentDoc);
-    console.log('[Debug] Fast check results:', results);
-    setFastSuggestions(results);
-  }, 250);
-
-  // Trigger analysis when the document changes.
-  useEffect(() => {
-    if (doc) {
-      debouncedInstantCheck(doc);
-      debouncedFastCheck(doc);
+    try {
+      const response = await fetch('/api/analysis/fast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc: currentDoc.toJSON() }),
+      });
+      if (!response.ok) throw new Error(`Fast analysis request failed: ${response.status}`);
+      const { suggestions } = await response.json();
+      setSuggestions(suggestions || []); // Replace previous suggestions with new ones
+    } catch (error) {
+      console.error('Failed to fetch fast analysis:', error);
+      toast.error('Fast analysis service is unavailable.');
     }
-  }, [doc, debouncedInstantCheck, debouncedFastCheck]);
+  }, 800);
+
+  // Tier 0: Real-time Spell Check (as user types)
+  const runRealtimeSpellCheck = useCallback(async (word: string, currentDoc: Node) => {
+    if (!word || !currentDoc) return;
+    try {
+      const response = await fetch('/api/analysis/spell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ word, doc: currentDoc.toJSON() }),
+      });
+      if (!response.ok) throw new Error('Real-time spell check failed');
+      const { suggestions } = await response.json();
+      if (suggestions && suggestions.length > 0) {
+        addSuggestions(suggestions);
+      }
+    } catch (error) {
+      console.error('Real-time spell check error:', error);
+    }
+  }, [addSuggestions]);
+
+  // Main effect to orchestrate all checks
+  useEffect(() => {
+    debouncedDeepAnalysis(doc, documentMetadata);
+    debouncedFastAnalysis(doc);
+  }, [doc, JSON.stringify(documentMetadata), debouncedDeepAnalysis, debouncedFastAnalysis]);
+
+  // We return the real-time checker so it can be called by the editor
+  return { runRealtimeSpellCheck, debouncedFastAnalysis };
 }; 
