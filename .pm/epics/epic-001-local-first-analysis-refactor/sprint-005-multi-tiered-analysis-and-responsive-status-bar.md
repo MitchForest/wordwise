@@ -179,6 +179,13 @@ Our goal is to create an assistant that feels like a partner, not a distraction.
         - [x] **Action 2 (Services):** Systematically updated all analysis services (`basic-grammar`, `style`, `engine` for spell-check) to extract a 10-character context snippet around each error and pass it to the factory.
         - [x] **Action 3 (Validation):** Confirmed the fix by running `bun lint`, `bun typecheck`, and `bun run build` successfully.
 
+- [ ] **Phase 14: Suggestion Experience Polish & Final Bug Fixes**
+    - [x] **31. Fix Suggestion Race Condition & Ordering:**
+        - [x] **Goal:** Create a stable, intuitive suggestion panel by eliminating race conditions and implementing logical sorting.
+        - [x] **Action 1 (Context - De-duplication):** In `SuggestionContext.tsx`, upgraded the `updateSuggestions` function to de-duplicate incoming suggestions. The unique key will be a combination of `from` + `to` + `ruleId`, ensuring the first suggestion for a specific error always wins.
+        - [x] **Action 2 (Context - Sorting):** In the same function, implement a robust sorting mechanism. Suggestions will be ordered by their `from` character position (ascending). All suggestions without a position (e.g., document-wide SEO tips) will be moved to the bottom of the list.
+        - [x] **Action 3 (Validation):** Manually test to confirm that instant spell-check suggestions are not replaced and that SEO suggestions appear last.
+
 ---
 
 ## Session Summary

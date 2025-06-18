@@ -4,136 +4,118 @@ A specialized writing assistant designed for blog owners who want to create SEO-
 
 ## Overview
 
-WordWise combines real-time grammar checking, SEO optimization, readability analysis, and AI-powered content enhancement into a single platform. Unlike general-purpose writing tools, WordWise is specifically built for content creators who need to balance quality writing with search engine performance.
+WordWise combines real-time grammar checking, SEO optimization, readability analysis, and AI-powered content enhancement into a single, streamlined platform. Unlike general-purpose writing tools, WordWise is specifically built for content creators who need to balance quality writing with search engine performance.
 
-## Who is WordWise for?
+## The WordWise User: The Savvy Solopreneur
 
-WordWise is built for independent blog owners, content creators, small business owners, and freelance writers.
+WordWise is built for **Alex**, an independent content creator running a niche blog. Alex is the writer, editor, SEO specialist, and publisher, juggling a passion for great content with the technical demands of growing an online business.
 
-- **Goal**: To increase organic traffic, improve search rankings, and publish professional-quality content.
-- **Challenge**: You need to produce great content but may not be an expert in SEO's technical demands.
-- **Pain Points**: Overcoming writer's block, navigating complex SEO requirements, and fixing grammar and style inconsistencies.
-
-Our secondary users include marketing teams and small businesses aiming to streamline their content creation process without hiring specialists.
+- **Goal**: To turn their blog into a primary income source by increasing organic traffic and building a loyal readership.
+- **Pain Points**: The mental drain of switching between writing and SEO, writer's block disrupting publishing schedules, and the fear that small errors undermine their authority.
 
 ## Core Features: A User-Centric Approach
 
-WordWise is designed around the real-world needs of content creators. Our features are directly mapped to user stories that address the core challenges of blogging.
+Our features are directly mapped to the core challenges of modern blogging.
 
-### 1. Real-time Writing Quality
-> *"As a blog owner, I want instant grammar and spelling corrections while I write, so I can publish professional content that builds trust with readers and search engines."*
+### 1. Foundational Writing Assistance
+> *"As a blogger, I need immediate, accurate feedback on my spelling, grammar, and writing style as I type, so I can be confident my final article is polished and professional."*
 
-WordWise offers a three-tier checking system for instant spellcheck, smart grammar analysis, and deep document-wide checks. Visual, non-intrusive feedback through color-coded underlines and hover cards allows you to fix issues with a single click without breaking your writing flow.
+WordWise offers a multi-tiered analysis engine that provides instant feedback on everything from spelling and grammar to style, using clear, non-intrusive, color-coded underlines to help you fix issues with a single click.
 
-### 2. SEO Content Optimization
-> *"As a blog owner, I want real-time SEO feedback and keyword optimization suggestions, so I can improve my search rankings while maintaining natural, readable content."*
+### 2. Integrated SEO Optimization
+> *"As a blogger, I need real-time SEO guidance directly within my editor, so I can optimize my content for search engines without breaking my writing flow."*
 
-Get real-time feedback on target keyword density, title length, meta descriptions, and heading structure. WordWise provides smart suggestions to help you integrate keywords naturally, avoid stuffing, and optimize your content for search engines.
+Get a live SEO score (0-100) and actionable suggestions based on target keyword usage, title and meta description optimization, and proper content structure, eliminating the need for separate, expensive SEO tools.
 
-### 3. AI Writing Assistant for Writer's Block
-> *"As a blog owner, I want AI-powered content generation and rewriting suggestions when I'm stuck, so I can overcome writer's block and maintain consistent publishing schedules."*
+### 3. Seamless Publishing Workflow
+> *"As a blogger, I want to publish my finished articles directly to my WordPress site from my editor, so I can eliminate tedious copy-pasting and formatting errors."*
 
-Our AI assistant helps you generate blog post outlines, write introductions and conclusions, and even expand bullet points into full paragraphs. The document-aware chat can rewrite sections for tone, improve clarity, or enhance SEO, all with a simple command.
+Securely connect to your WordPress site and publish your articles directly from WordWise, preserving all formatting and metadata. (Coming in Sprint 6)
 
-### 4. Content Structure and Flow
-> *"As a blog owner, I want intelligent suggestions for content organization and paragraph flow, so my posts are logically structured and easy for readers to follow."*
+### 4. AI-Powered Content Polishing
+> *"As a blogger, I want an AI partner that can intelligently review and enhance my writing for clarity, style, and impact, so I can elevate the quality of my content beyond basic corrections."*
 
-WordWise analyzes your content's structure, validating heading hierarchy, optimizing paragraph length, and ensuring a logical flow. This helps create content that is easy for readers to scan and understand.
+Use the power of AI to improve your text cohesively. AI suggestions are SEO-aware and can enhance clarity, flow, and impact with a single click. (Planned for Epic 2)
 
-### 5. Writing Style Enhancement
-> *"As a blog owner, I want style improvements that eliminate passive voice and increase engagement, so my content is more compelling and authoritative."*
+### 5. Goal-Oriented AI Rewriting
+> *"As a blogger, I want the ability to rewrite entire sections or posts with AI to match a specific goal, audience, or tone, so I can quickly adapt my content without starting from scratch."*
 
-Improve your writing with tools that detect passive voice, analyze sentence variety, and suggest stronger word choices. Our style checker helps you maintain a consistent tone and create more engaging content for your audience.
+Instantly change the tone of your writing from "Professional" to "Conversational," simplify complex topics for a beginner audience, or rewrite a section to be more persuasive. (Planned for Epic 2)
 
-### 6. Publication Readiness Dashboard
-> *"As a blog owner, I want a comprehensive quality score showing grammar, SEO, readability, and engagement metrics, so I know exactly when my content is ready to publish and will perform well."*
+### 6. AI-Assisted Content Creation
+> *"As a blogger, I need help overcoming writer's block and generating new ideas, so I can maintain a consistent publishing schedule and keep my content pipeline full."*
 
-A unified dashboard gives you a 0-100 score across Grammar, SEO, Readability, and Style. A publication-ready checklist ensures you've addressed all critical issues before you hit "publish."
-
-## How It Works
-
-1. **Start Writing**: Use the rich text editor with full formatting capabilities
-2. **Get Real-time Feedback**: See grammar, SEO, and readability scores update as you type
-3. **Use AI Assistance**: Chat with AI for content ideas, improvements, or when stuck
-4. **Optimize for SEO**: Track keyword density, optimize titles, and improve structure
-5. **Check Publication Readiness**: Review comprehensive quality scores before publishing
-6. **Export & Publish**: Copy optimized HTML or export to various formats
+Brainstorm topics, generate intelligent outlines from a single idea, expand a bullet point into a full paragraph, or craft a compelling introduction with our AI creation tools. (Planned for Epic 2)
 
 ## Technology Stack
 
-- **Frontend**: Next.js 15, TypeScript, React 19
-- **Editor**: Tiptap 2.x with custom extensions for grammar and SEO analysis
-- **UI**: Tailwind CSS, Radix UI components
-- **Database**: PostgreSQL with Drizzle ORM
-- **Authentication**: Better-auth for secure user management
-- **AI**: OpenAI GPT-4 with Vercel AI SDK
-- **Grammar Checking**: LanguageTool API integration
-- **Deployment**: Vercel with auto-save and offline support
+- **Framework:** Next.js (App Router)
+- **Language:** TypeScript
+- **UI:** React
+- **Text Editor:** Tiptap
+- **Database:** Supabase (Postgres) with Drizzle ORM
+- **Authentication:** better-auth
+- **Styling:** Tailwind CSS with shadcn/ui components
+- **Deployment:** Vercel
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ or Bun
-- PostgreSQL database (or Supabase account)
+- Bun (or Node.js 18+)
+- Supabase account (for database)
 - OpenAI API key
 - LanguageTool API key (optional, for enhanced grammar checking)
 
 ### Installation
 
-1. Clone the repository:
-```bash
-git clone https://github.com/MitchForest/wordwise.git
-cd wordwise
-```
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/MitchForest/wordwise.git
+    cd wordwise
+    ```
 
-2. Install dependencies:
-```bash
-bun install
-# or
-npm install
-```
+2.  Install dependencies:
+    ```bash
+    bun install
+    ```
 
-3. Set up environment variables:
-```bash
-cp .env.example .env.local
-```
+3.  Set up environment variables:
+    ```bash
+    cp .env.example .env.local
+    ```
 
-4. Configure your `.env.local` file:
-```env
-# Database
-DATABASE_URL="your-database-url"
+4.  Configure your `.env.local` file:
+    ```env
+    # Database (Supabase)
+    DATABASE_URL="your-supabase-postgres-connection-string"
 
-# Authentication
-BETTER_AUTH_SECRET="generate-a-random-secret"
-BETTER_AUTH_URL="http://localhost:3000"
+    # Authentication (better-auth)
+    BETTER_AUTH_SECRET="generate-a-secret"
+    BETTER_AUTH_URL="http://localhost:3000"
 
-# OpenAI for AI features
-OPENAI_API_KEY="your-openai-api-key"
+    # OpenAI for AI features
+    OPENAI_API_KEY="your-openai-api-key"
 
-# LanguageTool for grammar checking
-LANGUAGETOOL_API_KEY="your-languagetool-api-key"
-LANGUAGETOOL_API_URL="https://api.languagetoolplus.com/v2"
+    # LanguageTool for grammar checking
+    LANGUAGETOOL_API_KEY="your-languagetool-api-key"
+    LANGUAGETOOL_API_URL="https://api.languagetoolplus.com/v2"
 
-# App URL
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-```
+    # App URL
+    NEXT_PUBLIC_APP_URL="http://localhost:3000"
+    ```
 
-5. Run database migrations:
-```bash
-bun run db:push
-# or
-npm run db:push
-```
+5.  Run database migrations:
+    ```bash
+    bun run db:push
+    ```
 
-6. Start the development server:
-```bash
-bun run dev
-# or
-npm run dev
-```
+6.  Start the development server:
+    ```bash
+    bun run dev
+    ```
 
-7. Open [http://localhost:3000](http://localhost:3000) in your browser
+7.  Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Available Scripts
 
@@ -143,31 +125,25 @@ npm run dev
 - `bun run db:push` - Push database schema changes
 - `bun run db:studio` - Open Drizzle Studio for database management
 - `bun run lint` - Run ESLint
-- `bun run type-check` - Run TypeScript type checking
+- `bun run typecheck` - Run TypeScript type checking
 
 ## Competitive Advantages
 
 **vs. Grammarly:**
-- Integrated SEO optimization beyond just grammar
-- Content structure analysis and suggestions
-- AI-powered content generation for blogs
-- Real-time SERP preview and keyword tracking
+- Integrated SEO optimization beyond just grammar.
+- AI-powered content generation for blogs.
 
 **vs. SEO Tools (Surfer, Clearscope):**
-- Real-time grammar and style checking
-- Integrated writing environment (not just analysis)
-- AI writing assistant with direct editor integration
-- More affordable for individual creators
+- Real-time grammar and style checking in an integrated writing environment.
+- More affordable for individual creators.
 
 **vs. AI Writing Tools (ChatGPT, Claude):**
-- Purpose-built for SEO blog content
-- Real-time scoring and feedback as you type
-- Document management and auto-save
-- Specialized analysis for search optimization
+- Purpose-built for SEO blog content with real-time scoring and feedback.
+- Specialized, verifiable analysis for search optimization.
 
 ## Contributing
 
-WordWise is focused on creating the best possible experience for blog owners and content creators. We welcome contributions that align with our mission to simplify SEO content creation.
+We welcome contributions that align with our mission to simplify SEO content creation. Please feel free to open an issue or submit a pull request.
 
 ## License
 
