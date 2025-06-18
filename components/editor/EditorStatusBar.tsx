@@ -12,21 +12,11 @@ import { useSuggestions } from '@/contexts/SuggestionContext';
 import { Button } from '@/components/ui/button';
 import { Separator } from '../ui/separator';
 
-function getReadingLevel(score: number): string {
-  if (score >= 90) return "5th Grade";
-  if (score >= 80) return "6th Grade";
-  if (score >= 70) return "7th Grade";
-  if (score >= 60) return "8th-9th Grade";
-  if (score >= 50) return "10th-12th Grade";
-  if (score >= 30) return "College";
-  return "Graduate";
-}
-
 export function EditorStatusBar() {
   const { suggestions, metrics, setFilter } = useSuggestions();
 
   const handleSuggestionsClick = () => {
-    setFilter({ category: null });
+    setFilter({ categories: [] });
   };
 
   return (
@@ -45,7 +35,7 @@ export function EditorStatusBar() {
           />
           <Metric
             label="Reading Level"
-            value={metrics ? getReadingLevel(metrics.readabilityScore) : '--'}
+            value={metrics ? metrics.readingLevel : '--'}
             icon={BookOpen}
           />
         </div>

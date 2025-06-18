@@ -16,9 +16,8 @@ import { getSchema } from '@tiptap/core';
 import { serverEditorExtensions } from '@/lib/editor/tiptap-extensions.server';
 
 export interface DocumentMetrics {
-  overallScore: number;
   grammarScore: number;
-  readabilityScore: number;
+  readingLevel: string;
   seoScore: number;
   wordCount: number;
   readingTime: string;
@@ -105,7 +104,8 @@ export class UnifiedAnalysisEngine {
     if (!this.isInitialized || !doc) return [];
     const styleSuggestions = this.styleAnalyzer.run(doc);
     const grammarSuggestions = this.basicGrammarChecker.run(doc);
-    return [...styleSuggestions, ...grammarSuggestions];
+    const spellingSuggestions = this.runSpellCheck(doc);
+    return [...styleSuggestions, ...grammarSuggestions, ...spellingSuggestions];
   }
 
   // Tier 3: Deep checks (API-driven, ~2000ms)
@@ -122,9 +122,8 @@ export class UnifiedAnalysisEngine {
       return Promise.resolve({
         suggestions: [],
         metrics: {
-          overallScore: 0,
           grammarScore: 0,
-          readabilityScore: 0,
+          readingLevel: 'N/A',
           seoScore: 0,
           wordCount: 0,
           readingTime: '0 min read',
@@ -146,45 +145,19 @@ export class UnifiedAnalysisEngine {
     const fastCheckSuggestions = this.runFastChecks(doc);
     const grammarScore = Math.max(0, 100 - fastCheckSuggestions.length * 5);
     
-    const overallScore = Math.round(
-      seoResult.score * 0.4 + metricsResult.readabilityScore * 0.4 + grammarScore * 0.2
-    );
-
     const metrics: DocumentMetrics = {
-      overallScore,
       grammarScore,
-      readabilityScore: metricsResult.readabilityScore,
+      readingLevel: metricsResult.readingLevel,
       seoScore: Math.round(seoResult.score),
       wordCount: metricsResult.wordCount,
       readingTime: metricsResult.readingTime,
     };
     
-    // Convert SEO issues into UnifiedSuggestion format
-    const seoSuggestions: UnifiedSuggestion[] = seoResult.issues.map((issue, index) => {
-      // Find a more specific suggestion if available
-      const detailedSuggestion = seoResult.suggestions.find(s => s.toLowerCase().includes(issue.split(' ')[0].toLowerCase()));
-
-      return createSuggestion(
-        0, 0, // SEO suggestions are document-level, no specific position
-        'seo',
-        'seo',
-        'SEO Improvement',
-        detailedSuggestion || issue,
-        [], // No automated actions for SEO suggestions yet
-        'suggestion'
-      );
-    });
-
-    return { suggestions: seoSuggestions, metrics };
+    // The new SEO analyzer already returns UnifiedSuggestion objects.
+    // We can use them directly.
+    return { suggestions: seoResult.suggestions, metrics };
   }
   
-  private convertFleschKincaidToScore(fk: number | null): number {
-    if (fk === null || isNaN(fk)) return 0;
-    if (fk > 100) return 100;
-    if (fk < 0) return 0;
-    return Math.round(fk);
-  }
-
   /**
    * @deprecated The `run` method is deprecated in favor of tiered execution
    * (e.g., `runInstantChecks`, `runFastChecks`). It is maintained for now

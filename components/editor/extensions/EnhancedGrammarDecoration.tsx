@@ -6,6 +6,7 @@ import type { UnifiedSuggestion } from '@/types/suggestions';
 
 interface GrammarDecorationOptions {
   suggestions: UnifiedSuggestion[];
+  hoveredSuggestionId: string | null;
   onSuggestionClick?: (suggestion: UnifiedSuggestion) => void;
   onHover: (id: string) => void;
   onLeave: () => void;
@@ -17,6 +18,7 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
   addOptions() {
     return {
       suggestions: [],
+      hoveredSuggestionId: null,
       onSuggestionClick: () => {},
       onHover: () => {},
       onLeave: () => {},
@@ -55,7 +57,7 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
                     }
                     
                     const decoration = Decoration.inline(from, to, {
-                      class: getDecorationClass(suggestion),
+                      class: getDecorationClass(suggestion, options.hoveredSuggestionId),
                       'data-suggestion-id': suggestion.id,
                       'data-suggestion-category': suggestion.category,
                       'data-suggestion-severity': suggestion.severity,
@@ -156,10 +158,18 @@ export function clearSuggestions(editor: Editor) {
 }
 
 // Get decoration class based on severity and category
-function getDecorationClass(suggestion: UnifiedSuggestion): string {
+function getDecorationClass(suggestion: UnifiedSuggestion, hoveredId: string | null): string {
   const baseClass = 'grammar-decoration';
-  const severityClass = `grammar-${suggestion.severity}`;
   const categoryClass = `grammar-${suggestion.category}`;
+  const isHovered = suggestion.id === hoveredId;
   
-  return `${baseClass} ${severityClass} ${categoryClass}`;
+  // No severity class for now to simplify, can be added back later.
+  // const severityClass = `grammar-${suggestion.severity}`;
+  
+  let finalClass = `${baseClass} ${categoryClass}`;
+  if (isHovered) {
+    finalClass += ' bg-muted';
+  }
+  
+  return finalClass;
 }

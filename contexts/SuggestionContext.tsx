@@ -16,7 +16,7 @@ interface EditorActions {
 }
 
 interface SuggestionFilter {
-  category: string | null;
+  categories: string[];
 }
 
 interface SuggestionContextType {
@@ -33,6 +33,7 @@ interface SuggestionContextType {
   registerEditorActions: (actions: EditorActions) => void;
   applySuggestion: (suggestionId: string, value: string) => void;
   ignoreSuggestion: (suggestionId: string) => void;
+  replaceSuggestionsByCategories: (categories: string[], newSuggestions: UnifiedSuggestion[]) => void;
 }
 
 const SuggestionContext = createContext<SuggestionContextType | undefined>(undefined);
@@ -40,7 +41,7 @@ const SuggestionContext = createContext<SuggestionContextType | undefined>(undef
 export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
   const [suggestions, setSuggestions] = useState<UnifiedSuggestion[]>([]);
   const [metrics, setMetrics] = useState<DocumentMetrics | null>(null);
-  const [filter, setFilter] = useState<SuggestionFilter>({ category: null });
+  const [filter, setFilter] = useState<SuggestionFilter>({ categories: [] });
   const [hoveredSuggestionId, setHoveredSuggestionId] = useState<string | null>(null);
   const [editorActions, setEditorActions] = useState<EditorActions | null>(null);
 
@@ -54,6 +55,17 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
       );
 
       return [...filteredOldSuggestions, ...newSuggestions];
+    });
+  }, []);
+
+  const replaceSuggestionsByCategories = useCallback((categories: string[], newSuggestions: UnifiedSuggestion[]) => {
+    setSuggestions(prevSuggestions => {
+      // Filter out suggestions that belong to the specified categories
+      const remainingSuggestions = prevSuggestions.filter(
+        suggestion => !categories.includes(suggestion.category)
+      );
+      // Return the remaining suggestions plus the new ones
+      return [...remainingSuggestions, ...newSuggestions];
     });
   }, []);
 
@@ -74,10 +86,10 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const filteredSuggestions = useMemo(() => {
-    if (!filter.category) {
+    if (filter.categories.length === 0) {
       return suggestions;
     }
-    return suggestions.filter(s => s.category === filter.category);
+    return suggestions.filter(s => filter.categories.includes(s.category));
   }, [suggestions, filter]);
 
   return (
@@ -95,7 +107,8 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
         addSuggestions,
         registerEditorActions,
         applySuggestion,
-        ignoreSuggestion
+        ignoreSuggestion,
+        replaceSuggestionsByCategories
       }}
     >
       {children}

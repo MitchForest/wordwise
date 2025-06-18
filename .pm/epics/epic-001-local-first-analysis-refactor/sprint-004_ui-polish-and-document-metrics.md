@@ -19,6 +19,17 @@ This sprint will deliver a production-grade, interactive analysis experience. We
         - [x] **Refactor** the `SEOAnalyzer`, `ReadabilityAnalyzer`, `StyleAnalyzer`, and `BasicGrammarChecker` to use the `SuggestionFactory`.
         - [x] The `runDeepChecks` method will compute and return a full `metrics` object: `{ overallScore, grammarScore, readabilityScore, seoScore, wordCount, readingTime }`.
         - [x] In `hooks/useUnifiedAnalysis.ts`, add a long-debounce executor (`debouncedDeepCheck`) for this new tier.
+    - [ ] **3a. Implement Advanced SEO Analyzer (Deferred to Sprint 5):**
+        - [ ] **Goal:** Replace the placeholder `SEOAnalyzer` with a robust implementation based on `.pm/docs/old/seo.md`.
+        - [ ] **Action:** In `services/analysis/seo.ts`, the `analyze` method will be rewritten.
+        - [ ] **Details & Architecture:**
+            - [ ] **Title Analysis:** Check length (50-60 chars) and keyword presence/placement. For each issue, call `createSuggestion` with category `SEO`.
+            - [ ] **Meta Description:** Check length (150-160 chars), keyword presence, and for a call-to-action. Create suggestions for each issue.
+            - [ ] **Keyword Density:** Calculate density and aim for 0.5-2%. Check for keyword in the first paragraph. Create suggestions for issues.
+            - [ ] **Heading Structure:** Check for a single H1, proper H2->H3 hierarchy, and keyword presence in headings. Create suggestions.
+            - [ ] **Content Analysis:** Check for minimum word count and that paragraphs are not too long.
+            - [ ] **Scoring:** Implement the weighted scoring model from the documentation to calculate a final `seoScore`.
+            - [ ] **Output:** The analyzer's `analyze` method will return a `UnifiedSuggestion[]` array, ready for the UI, ensuring it is architecturally consistent with all other analyzers.
     - [x] **4. Expand Suggestion Context:**
         - [x] In `contexts/SuggestionContext.tsx`, add new state to hold the `metrics` object.
         - [x] Add state to manage filtering: `filter: { category: string | null }`.

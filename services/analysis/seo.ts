@@ -1,256 +1,227 @@
-import keywordExtractor from 'keyword-extractor';
-import stringSimilarity from 'string-similarity';
-import type { SEOAnalysisResult } from '@/types/suggestions';
+import type { JSONContent } from '@tiptap/core'
+import { createSuggestion } from '@/lib/editor/suggestion-factory'
+import type { UnifiedSuggestion } from '@/types/suggestions'
 
-export class SEOAnalyzer {
-  private readonly optimalValues = {
-    titleLength: { min: 50, max: 60 },
-    metaLength: { min: 150, max: 160 },
-    keywordDensity: { min: 1, max: 2 },
-    minWords: 300,
-    minHeadings: 3,
-    minParagraphs: 3,
-  };
-
-  analyze(document: {
-    title: string;
-    metaDescription: string;
-    content: any; // Tiptap JSON
-    plainText: string;
-    targetKeyword: string;
-    keywords: string[];
-  }): SEOAnalysisResult {
-    const result: SEOAnalysisResult = {
-      score: 0,
-      breakdown: {
-        title: 0,
-        meta: 0,
-        content: 0,
-        structure: 0,
-      },
-      issues: [],
-      suggestions: [],
-      keywordAnalysis: {
-        density: 0,
-        distribution: 'sparse',
-        relatedKeywords: [],
-      },
-    };
-
-    // Title Analysis (25 points)
-    result.breakdown.title = this.analyzeTitle(document, result);
-    
-    // Meta Description Analysis (25 points)
-    result.breakdown.meta = this.analyzeMeta(document, result);
-    
-    // Content Analysis (30 points)
-    result.breakdown.content = this.analyzeContent(document, result);
-    
-    // Structure Analysis (20 points)
-    result.breakdown.structure = this.analyzeStructure(document, result);
-    
-    // Calculate total score
-    result.score = Object.values(result.breakdown).reduce((sum, score) => sum + score, 0);
-    
-    // Generate keyword analysis
-    result.keywordAnalysis = this.analyzeKeywords(document);
-    
-    // Generate suggestions based on issues
-    result.suggestions = this.generateSuggestions(result.issues, document);
-    
-    return result;
+/**
+ * @purpose Extracts all heading nodes from Tiptap JSON content.
+ * @param content Tiptap JSON content.
+ * @returns An array of headings with their level and text content.
+ */
+function extractHeadings(content: JSONContent): { level: number; text: string }[] {
+  const headings: { level: number; text: string }[] = []
+  if (!content || !content.content) {
+    return headings
   }
 
-  private analyzeTitle(doc: any, result: SEOAnalysisResult): number {
-    let score = 0;
-    
-    // Length check (10 points)
-    if (doc.title.length < this.optimalValues.titleLength.min) {
-      result.issues.push(`Title too short (${doc.title.length} chars, need 50+)`);
-    } else if (doc.title.length > this.optimalValues.titleLength.max) {
-      result.issues.push(`Title too long (${doc.title.length} chars, max 60)`);
-    } else {
-      score += 10;
-    }
-    
-    // Keyword presence (10 points)
-    if (doc.targetKeyword && doc.title.toLowerCase().includes(doc.targetKeyword.toLowerCase())) {
-      score += 10;
-      
-      // Bonus for keyword at start (5 points)
-      if (doc.title.toLowerCase().startsWith(doc.targetKeyword.toLowerCase())) {
-        score += 5;
-      }
-    } else if (doc.targetKeyword) {
-      result.issues.push('Target keyword missing from title');
-    }
-    
-    return score;
-  }
-
-  private analyzeMeta(doc: any, result: SEOAnalysisResult): number {
-    let score = 0;
-    
-    // Length check (10 points)
-    if (!doc.metaDescription) {
-      result.issues.push('Missing meta description');
-    } else if (doc.metaDescription.length < this.optimalValues.metaLength.min) {
-      result.issues.push(`Meta description too short (${doc.metaDescription.length} chars)`);
-    } else if (doc.metaDescription.length > this.optimalValues.metaLength.max) {
-      result.issues.push(`Meta description too long (${doc.metaDescription.length} chars)`);
-    } else {
-      score += 10;
-    }
-    
-    // Keyword presence (10 points)
-    if (doc.metaDescription && doc.targetKeyword && 
-        doc.metaDescription.toLowerCase().includes(doc.targetKeyword.toLowerCase())) {
-      score += 10;
-    } else if (doc.targetKeyword && doc.metaDescription) {
-      result.issues.push('Target keyword missing from meta description');
-    }
-    
-    // Call to action (5 points)
-    const ctaWords = ['learn', 'discover', 'find out', 'get', 'read'];
-    if (doc.metaDescription && ctaWords.some(word => doc.metaDescription.toLowerCase().includes(word))) {
-      score += 5;
-    }
-    
-    return score;
-  }
-
-  private analyzeContent(doc: any, result: SEOAnalysisResult): number {
-    let score = 0;
-    const words = doc.plainText.split(/\s+/).filter((w: string) => w.length > 0);
-    
-    // Word count (10 points)
-    if (words.length < this.optimalValues.minWords) {
-      result.issues.push(`Content too short (${words.length} words, need 300+)`);
-    } else {
-      score += 10;
-    }
-    
-    // Keyword density (10 points)
-    if (doc.targetKeyword) {
-      const keywordCount = (doc.plainText.toLowerCase().match(new RegExp(doc.targetKeyword.toLowerCase(), 'g')) || []).length;
-      const density = (keywordCount / words.length) * 100;
-      
-      if (density < this.optimalValues.keywordDensity.min) {
-        result.issues.push(`Keyword density too low (${density.toFixed(1)}%, target 1-2%)`);
-      } else if (density > this.optimalValues.keywordDensity.max) {
-        result.issues.push(`Keyword density too high (${density.toFixed(1)}%, target 1-2%)`);
-      } else {
-        score += 10;
-      }
-    }
-    
-    // Keywords usage (10 points)
-    if (doc.keywords && doc.keywords.length > 0) {
-      const foundKeywords = doc.keywords.filter((kw: string) => 
-        doc.plainText.toLowerCase().includes(kw.toLowerCase())
-      );
-      score += Math.min(10, foundKeywords.length * 3);
-    }
-    
-    return score;
-  }
-
-  private analyzeStructure(doc: any, result: SEOAnalysisResult): number {
-    let score = 0;
-    
-    // Parse Tiptap JSON content
-    const headings = this.countNodesOfType(doc.content, 'heading');
-    if (headings < this.optimalValues.minHeadings) {
-      result.issues.push(`Need more headings (${headings} found, need 3+)`);
-    } else {
-      score += 10;
-    }
-    
-    // Paragraphs
-    const paragraphs = this.countNodesOfType(doc.content, 'paragraph');
-    if (paragraphs < this.optimalValues.minParagraphs) {
-      result.issues.push('Add more paragraphs for better structure');
-    } else {
-      score += 5;
-    }
-    
-    // Lists
-    const lists = this.countNodesOfType(doc.content, 'bulletList') + 
-                  this.countNodesOfType(doc.content, 'orderedList');
-    if (lists > 0) {
-      score += 5;
-    } else {
-      result.suggestions.push('Consider adding lists for better scannability');
-    }
-    
-    return score;
-  }
-
-  private countNodesOfType(content: any, type: string): number {
-    if (!content || !content.content) return 0;
-    let count = 0;
-    
-    const traverse = (node: any) => {
-      if (node.type === type) count++;
+  function traverse(node: JSONContent) {
+    if (node.type === 'heading' && node.attrs) {
+      let text = ''
       if (node.content) {
-        node.content.forEach(traverse);
+        // Concatenate text from all child text nodes.
+        node.content.forEach((child) => {
+          if (child.type === 'text') {
+            text += child.text || ''
+          }
+        })
       }
-    };
-    
-    traverse(content);
-    return count;
+      headings.push({
+        level: node.attrs.level,
+        text,
+      })
+    }
+    if (node.content) {
+      node.content.forEach(traverse)
+    }
   }
 
-  private analyzeKeywords(doc: any): any {
-    const words = doc.plainText.split(/\s+/).filter((w: string) => w.length > 0);
-    const keywordCount = doc.targetKeyword ? 
-      (doc.plainText.toLowerCase().match(new RegExp(doc.targetKeyword.toLowerCase(), 'g')) || []).length : 0;
-    const density = words.length > 0 ? (keywordCount / words.length) * 100 : 0;
-    
-    // Extract related keywords
-    const extracted = keywordExtractor.extract(doc.plainText, {
-      language: 'english',
-      remove_digits: true,
-      return_changed_case: true,
-      remove_duplicates: true,
-    });
-    
-    // Find similar keywords
-    const relatedKeywords = doc.targetKeyword ? 
-      extracted
-        .filter((word: string) => stringSimilarity.compareTwoStrings(word, doc.targetKeyword) > 0.3)
-        .slice(0, 10) : [];
-    
-    // Check distribution
-    const sentences = doc.plainText.split(/[.!?]+/);
-    const keywordSentences = doc.targetKeyword ?
-      sentences.filter((s: string) => 
-        s.toLowerCase().includes(doc.targetKeyword.toLowerCase())
-      ) : [];
-    const distribution = sentences.length > 0 ? keywordSentences.length / sentences.length : 0;
-    
+  traverse(content)
+  return headings
+}
+
+/**
+ * @purpose Analyzes document for SEO best practices.
+ * @class SEOAnalyzer
+ * @date 2024-07-29 - Initial implementation based on user docs.
+ */
+export class SEOAnalyzer {
+  private suggestions: UnifiedSuggestion[] = []
+
+  /**
+   * @purpose Main analysis function.
+   * @param document An object containing all necessary document parts.
+   * @returns An object with the final SEO score and an array of suggestions.
+   */
+  public analyze(document: {
+    title: string
+    metaDescription: string
+    content: JSONContent
+    plainText: string
+    targetKeyword?: string
+  }): { score: number; suggestions: UnifiedSuggestion[] } {
+    this.suggestions = []
+    const { title, metaDescription, content, plainText, targetKeyword } = document
+
+    // Run all checks and collect their weighted scores
+    const titleScore = this.checkTitle(title, targetKeyword)
+    const metaScore = this.checkMetaDescription(metaDescription, targetKeyword)
+    const headings = extractHeadings(content)
+    const headingScore = this.analyzeHeadings(headings, targetKeyword)
+    const wordCount = plainText.split(/\s+/).filter(Boolean).length
+    const contentScore = this.analyzeContent(plainText, wordCount, headings.length)
+    const keywordScore = this.checkKeywordDensity(plainText, wordCount, targetKeyword)
+
+    // Calculate final weighted score
+    const totalScore = Math.round(
+      titleScore * 0.25 +
+        metaScore * 0.15 +
+        keywordScore * 0.25 +
+        headingScore * 0.2 +
+        contentScore * 0.15,
+    )
+
     return {
-      density,
-      distribution: distribution > 0.3 ? 'clustered' : distribution > 0.1 ? 'good' : 'sparse',
-      relatedKeywords,
-    };
+      score: Math.max(0, Math.min(100, totalScore)),
+      suggestions: this.suggestions,
+    }
   }
 
-  private generateSuggestions(issues: string[], doc: any): string[] {
-    const suggestions = [];
-    
-    if (issues.some(i => i.includes('keyword missing from title'))) {
-      suggestions.push(`Try: "${doc.targetKeyword} - ${doc.title}"`);
+  private addSuggestion(message: string) {
+    // SEO suggestions are document-wide and don't have a specific text range (from/to).
+    // We use a placeholder range [0, 1] and let the UI handle them as non-actionable list items.
+    this.suggestions.push(createSuggestion(0, 1, '', 'seo', 'SEO Suggestion', message, [], 'suggestion'))
+  }
+
+  private checkTitle(title: string, targetKeyword?: string): number {
+    let score = 100
+    if (title.length < 30) {
+      this.addSuggestion(`Title is too short. Aim for 30-60 characters (currently ${title.length}).`)
+      score -= 30
+    } else if (title.length > 60) {
+      this.addSuggestion(`Title is too long. Aim for 30-60 characters (currently ${title.length}).`)
+      score -= 20
     }
-    
-    if (issues.some(i => i.includes('density too low'))) {
-      suggestions.push('Add keyword naturally in introduction and conclusion');
+
+    if (targetKeyword) {
+      if (!title.toLowerCase().includes(targetKeyword.toLowerCase())) {
+        this.addSuggestion('Target keyword is missing from the title.')
+        score -= 40
+      } else if (title.toLowerCase().indexOf(targetKeyword.toLowerCase()) > title.length / 2) {
+        this.addSuggestion('Move the target keyword earlier in the title for better impact.')
+        score -= 10
+      }
     }
-    
-    if (issues.some(i => i.includes('Need more headings'))) {
-      suggestions.push('Break content into sections with H2/H3 headings');
+    return Math.max(0, score)
+  }
+
+  private checkMetaDescription(description: string, targetKeyword?: string): number {
+    let score = 100
+    if (!description) {
+      this.addSuggestion('Meta description is missing. This is critical for search appearance.')
+      return 0
     }
-    
-    return suggestions;
+
+    if (description.length < 120) {
+      this.addSuggestion(`Meta description is too short. Aim for 120-160 characters (currently ${description.length}).`)
+      score -= 25
+    } else if (description.length > 160) {
+      this.addSuggestion(`Meta description is too long and will be cut off by Google (currently ${description.length}).`)
+      score -= 20
+    }
+
+    if (targetKeyword && !description.toLowerCase().includes(targetKeyword.toLowerCase())) {
+      this.addSuggestion('Target keyword is missing from the meta description.')
+      score -= 30
+    }
+
+    const ctaWords = /learn|discover|find out|read|explore|get/i
+    if (!ctaWords.test(description)) {
+      this.addSuggestion('Consider adding a call-to-action (e.g., "Learn more") to your meta description.')
+      score -= 10
+    }
+
+    return Math.max(0, score)
+  }
+
+  private analyzeHeadings(headings: { level: number; text: string }[], targetKeyword?: string): number {
+    let score = 100
+    const h1s = headings.filter((h) => h.level === 1)
+
+    if (h1s.length === 0) {
+      this.addSuggestion('The document is missing an H1 tag. Every page should have exactly one H1.')
+      score -= 40
+    } else if (h1s.length > 1) {
+      this.addSuggestion(`There are ${h1s.length} H1 tags. You should only use one H1 per page.`)
+      score -= 30
+    }
+
+    let lastLevel = 0
+    for (const heading of headings) {
+      if (heading.level > lastLevel + 1) {
+        this.addSuggestion(`Heading structure is illogical. A H${heading.level} appears after a H${lastLevel}.`)
+        score -= 15
+        break // Only report the first hierarchy issue.
+      }
+      lastLevel = heading.level
+    }
+
+    if (targetKeyword) {
+      const keywordInHeading = headings.some((h) => h.text.toLowerCase().includes(targetKeyword.toLowerCase()))
+      if (!keywordInHeading) {
+        this.addSuggestion('Include your target keyword in at least one subheading (H2, H3, etc.).')
+        score -= 20
+      }
+    }
+
+    return Math.max(0, score)
+  }
+
+  private analyzeContent(plainText: string, wordCount: number, numHeadings: number): number {
+    let score = 100
+
+    if (wordCount < 300) {
+      this.addSuggestion(`Content is too short (${wordCount} words). Aim for at least 300 words for better ranking potential.`)
+      score -= 40
+    }
+
+    const paragraphs = plainText.split('\n\n').filter((p) => p.trim().length > 0)
+    const longParagraphs = paragraphs.filter((p) => p.split(/\s+/).length > 150)
+    if (longParagraphs.length > 0) {
+      this.addSuggestion(`Break up long paragraphs. At least ${longParagraphs.length} paragraph(s) are over 150 words.`)
+      score -= 10
+    }
+
+    if (wordCount > 300 && numHeadings < 2) {
+      this.addSuggestion('Add more subheadings to break up the text and improve readability.')
+      score -= 10
+    }
+    return Math.max(0, score)
+  }
+
+  private checkKeywordDensity(plainText: string, wordCount: number, targetKeyword?: string): number {
+    if (!targetKeyword || wordCount === 0) return 100
+    let score = 100
+
+    const keywordRegex = new RegExp(`\\b${targetKeyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi')
+    const matches = plainText.match(keywordRegex) || []
+    const density = (matches.length / wordCount) * 100
+
+    if (density === 0) {
+      this.addSuggestion('Target keyword was not found in the content.')
+      return 0
+    } else if (density < 0.5) {
+      this.addSuggestion(`Keyword density is too low (${density.toFixed(1)}%). Aim for 0.5% to 2%.`)
+      score -= 40
+    } else if (density > 2.5) {
+      this.addSuggestion(`Keyword density is too high (${density.toFixed(1)}%), which can be seen as keyword stuffing. Aim for under 2.5%.`)
+      score -= 50
+    }
+
+    const firstParagraph = plainText.split('\n\n')[0]
+    if (!firstParagraph.toLowerCase().includes(targetKeyword.toLowerCase())) {
+      this.addSuggestion('Include the target keyword in the first paragraph.')
+      score -= 20
+    }
+
+    return Math.max(0, score)
   }
 } 

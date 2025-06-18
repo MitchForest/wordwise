@@ -23,7 +23,7 @@ export const useUnifiedAnalysis = (
     keywords: string[];
   }
 ) => {
-  const { setSuggestions, setMetrics, addSuggestions } = useSuggestions();
+  const { setSuggestions, setMetrics, addSuggestions, replaceSuggestionsByCategories } = useSuggestions();
 
   // Immediate check to clear suggestions if the document is empty
   useEffect(() => {
@@ -57,10 +57,11 @@ export const useUnifiedAnalysis = (
     }
   }, 2000);
 
-  // Tier 1: Fast Analysis (Grammar, Style) - Short debounce
+  // Tier 1: Fast Analysis (Grammar, Style, Spelling) - Short debounce
   const debouncedFastAnalysis = useDebouncedCallback(async (currentDoc) => {
-    if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 5) {
-      setSuggestions([]);
+    if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 2) {
+      // If the document is too short, clear out all fast-check categories
+      replaceSuggestionsByCategories(['grammar', 'style', 'spelling'], []);
       return;
     }
     try {
@@ -71,12 +72,12 @@ export const useUnifiedAnalysis = (
       });
       if (!response.ok) throw new Error(`Fast analysis request failed: ${response.status}`);
       const { suggestions } = await response.json();
-      setSuggestions(suggestions || []); // Replace previous suggestions with new ones
+      replaceSuggestionsByCategories(['grammar', 'style', 'spelling'], suggestions || []);
     } catch (error) {
       console.error('Failed to fetch fast analysis:', error);
       toast.error('Fast analysis service is unavailable.');
     }
-  }, 800);
+  }, 500);
 
   // Tier 0: Real-time Spell Check (as user types)
   const runRealtimeSpellCheck = useCallback(async (word: string, currentDoc: Node) => {

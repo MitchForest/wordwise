@@ -3,51 +3,39 @@
  * @purpose This service is responsible for calculating quantitative metrics about the document,
  * such as readability, word count, and reading time. It is orchestrated by the
  * UnifiedAnalysisEngine and provides data for the EditorStatusBar.
+ * @modified 2024-07-26 - Replaced Readability/JSDOM with `text-statistics` for a more
+ * accurate Flesch-Kincaid grade level calculation.
  */
-import { Readability } from '@mozilla/readability';
-import { JSDOM } from 'jsdom';
 import readingTime from 'reading-time';
-import { generateHTML } from '@tiptap/html';
-import { serverEditorExtensions } from '@/lib/editor/tiptap-extensions.server';
+import textStatistics from 'text-statistics';
 
 export interface DocumentMetricsSet {
-  readabilityScore: number;
+  readingLevel: string;
   wordCount: number;
   readingTime: string;
 }
 
 export class DocumentMetricAnalyzer {
   public run(doc: any): DocumentMetricsSet {
-    if (!doc) {
+    if (!doc || !doc.textContent) {
       return {
-        readabilityScore: 0,
+        readingLevel: 'N/A',
         wordCount: 0,
         readingTime: '0 min read',
       };
     }
 
     const plainText = doc.textContent;
-    const wordCount = plainText.split(/\s+/).filter(Boolean).length;
+    const stats = textStatistics(plainText);
+    const wordCount = stats.wordCount();
 
-    // Readability Analysis
-    const html = generateHTML(doc.toJSON(), serverEditorExtensions);
-    const dom = new JSDOM(html);
-    const reader = new Readability(dom.window.document);
-    const readabilityResult = reader.parse();
-    // Type definitions for readability are missing fleschKincaid, so we cast to any
-    const readabilityScore = readabilityResult ? this.convertFleschKincaidToScore((readabilityResult as any).fleschKincaid) : 0;
+    // We now use Flesch-Kincaid Grade Level for a more concrete metric.
+    const gradeLevel = stats.fleschKincaidGradeLevel();
 
     return {
-      readabilityScore,
+      readingLevel: `Grade ${Math.round(gradeLevel)}`,
       wordCount,
       readingTime: readingTime(plainText).text,
     };
-  }
-
-  private convertFleschKincaidToScore(fk: number | null): number {
-    if (fk === null || isNaN(fk)) return 0;
-    if (fk > 100) return 100;
-    if (fk < 0) return 0;
-    return Math.round(fk);
   }
 } 

@@ -43,4 +43,6 @@ declare module 'nspell' {
   export default nspell;
 }
 
-declare module 'dictionary-en'; 
+declare module 'dictionary-en';
+
+declare module 'text-statistics'; 

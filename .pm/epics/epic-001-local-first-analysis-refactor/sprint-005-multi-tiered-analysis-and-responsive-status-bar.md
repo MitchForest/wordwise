@@ -74,39 +74,40 @@ Our goal is to create an assistant that feels like a partner, not a distraction.
         - [x] Update this sprint document with a session summary and file change log upon completion.
         - [x] Update `PROJECT_STATUS.md` to reflect the current sprint. 
 
-- [ ] **Phase 4: Advanced SEO Implementation**
-    - [ ] **11. Research & Plan SEO Service:**
-        - [ ] Thoroughly review the logic and scoring in `.pm/docs/old/seo.md`.
-        - [ ] Plan how to integrate these checks into the existing `seo.ts` service, including how to extract headings and other metadata from the Tiptap document structure within the API route.
-    - [ ] **12. Implement Advanced SEO Analyzer:**
-        - [ ] In `services/analysis/seo.ts`, replace the placeholder implementation with the detailed checks from the documentation:
-            - Title length, keyword placement.
-            - Meta description length, keyword presence, call-to-action.
-            - Keyword density (0.5% - 2% target).
-            - Heading structure (single H1, proper hierarchy).
-            - Content length.
-        - [ ] Develop a weighted scoring system as outlined in the documentation to produce a final `seoScore`.
-        - [ ] Generate actionable suggestions for any detected issues (e.g., "Title is too long," "Add target keyword to first paragraph").
+- [x] **Phase 4: Advanced SEO Implementation**
+    - [x] **11. Research & Plan SEO Service:**
+        - [x] Thoroughly review the logic and scoring in `.pm/docs/old/seo.md`.
+        - [x] Plan how to integrate these checks into the existing `seo.ts` service, including how to extract headings and other metadata from the Tiptap document structure within the API route.
+    - [x] **12. Implement Advanced SEO Analyzer:**
+        - [x] In `services/analysis/seo.ts`, replace the placeholder implementation with the detailed checks from the documentation:
+            - [x] Title length, keyword placement.
+            - [x] Meta description length, keyword presence, call-to-action.
+            - [x] Keyword density (0.5% - 2% target).
+            - [x] Heading structure (single H1, proper hierarchy).
+            - [x] Content length.
+        - [x] Develop a weighted scoring system as outlined in the documentation to produce a final `seoScore`.
+        - [x] Generate actionable suggestions for any detected issues (e.g., "Title is too long," "Add target keyword to first paragraph").
 
 - [ ] **Phase 5: UX & Interactivity Polish**
-    - [ ] **13. Fix Inaccurate Reading Level:**
-        - [ ] Investigate `services/analysis/metrics.ts` to understand why the Flesch-Kincaid score is consistently high.
-        - [ ] Validate the formula or library being used and correct it to accurately reflect the text's complexity.
-    - [ ] **14. Fix Disappearing Suggestions Bug:**
-        - [ ] In `hooks/useUnifiedAnalysis.ts`, refactor state management.
-        - [ ] Instead of overwriting suggestions, merge results from different tiers (spell, fast, deep). Ensure that newer, more specific suggestions correctly replace older ones for the same text range, but don't wipe out suggestions from other categories.
-    - [ ] **15. Define & Implement Unified Color System:**
-        - [ ] Establish a consistent color code for each suggestion category (Spelling, Grammar, Style, SEO).
-        - [ ] Apply these colors to the underlines in the editor (`EnhancedGrammarDecoration.tsx`).
-        - [ ] Apply the same colors to the items in the suggestions panel (`EnhancedSuggestionsPanel.tsx`) for visual consistency.
-    - [ ] **16. Implement Interactive Underlines & Panel:**
-        - [ ] Add hover/click event listeners to the suggestion underlines in the editor.
-        - [ ] On hover, highlight the corresponding suggestion item in the side panel.
-        - [ ] On click, smoothly scroll the side panel to the corresponding suggestion, bringing it clearly into view.
-    - [ ] **17. Implement Suggestion Filtering:**
-        - [ ] Add UI controls (e.g., buttons or a multi-select dropdown) to the `EnhancedSuggestionsPanel.tsx`.
-        - [ ] Allow the user to filter the displayed suggestions by category (e.g., show only "Spelling" and "Grammar").
-        - [ ] Consider a "severity" filter if the analysis engines provide that data in the future.
+    - [x] **13. Fix Inaccurate Reading Level:**
+        - [x] Replaced the heavy `@mozilla/readability` library with the lightweight `text-statistics` package.
+        - [x] Switched from "Flesch Reading Ease" score to "Flesch-Kincaid Grade Level" for a more intuitive and accurate metric.
+        - [x] Refactored all downstream components and services to use the new `readingLevel` property.
+    - [x] **14. Fix Disappearing Suggestions Bug:**
+        - [x] Added `replaceSuggestionsByCategories` to `SuggestionContext` to allow atomic, category-based updates.
+        - [x] Refactored `useUnifiedAnalysis` to use this new function, preventing the `fast` analysis tier (grammar, style) from overwriting results from other tiers.
+    - [x] **15. Define & Implement Unified Color System:**
+        - [x] Defined a clear color-code for each suggestion category (Spelling: Red, Grammar: Yellow, Style: Blue, SEO: Purple).
+        - [x] Updated `app/globals.css` to include distinct underline styles for each category.
+        - [x] Refactored `EnhancedSuggestionsPanel.tsx` to use the color system, applying a colored left border to each suggestion card for visual consistency.
+    - [x] **16. Implement Interactive Underlines & Panel:**
+        - [x] Passed `hoveredSuggestionId` from the context into the `EnhancedGrammarDecoration` extension.
+        - [x] Added `onMouseEnter`/`onMouseLeave` handlers to suggestion cards in the panel to update the shared hover state.
+        - [x] Conditionally applied a `bg-muted` class to both the decoration underline and the panel card when hovered, creating a two-way highlight effect.
+    - [x] **17. Implement Suggestion Filtering:**
+        - [x] Updated the `SuggestionContext` to support multi-category filtering.
+        - [x] Added a header to the `EnhancedSuggestionsPanel` with toggle buttons for each category.
+        - [x] Implemented the filtering logic to show/hide suggestions based on the selected categories.
 
 - [ ] **Phase 6: Finalization**
 	- [ ] **18. Final Testing and Validation:**
@@ -118,3 +119,28 @@ Our goal is to create an assistant that feels like a partner, not a distraction.
 		- [ ] Run `bun lint`, `bun typecheck`, and `bun run build` to ensure no new issues have been introduced.
 	- [ ] **20. Update Project Documentation:**
 		- [ ] **As a final step**, once this sprint is complete and validated, update all relevant project documentation (`.pm/docs/`, `README.md`, etc.) to reflect the new multi-tiered analysis architecture and UI features. 
+
+---
+## Session Summary
+**Completed:**
+- **Task 13: Fix Inaccurate Reading Level**: Replaced the readability library, implemented a more accurate Flesch-Kincaid Grade Level metric, and refactored all affected parts of the application.
+- **Task 14: Fix Disappearing Suggestions Bug**: Corrected state management logic to prevent different analysis tiers from overwriting each other's suggestions.
+- **Task 15: Define & Implement Unified Color System**: Implemented a consistent, category-based color code for suggestion underlines and panel cards to improve UX.
+- **Task 16: Implement Interactive Underlines & Panel**: Passed `hoveredSuggestionId` from the context into the `EnhancedGrammarDecoration` extension, added `onMouseEnter`/`onMouseLeave` handlers to suggestion cards in the panel to update the shared hover state, and conditionally applied a `bg-muted` class to both the decoration underline and the panel card when hovered, creating a two-way highlight effect.
+- **Task 17: Implement Suggestion Filtering**: Updated the `SuggestionContext` to support multi-category filtering, added a header to the `EnhancedSuggestionsPanel` with toggle buttons for each category, and implemented the filtering logic to show/hide suggestions based on the selected categories.
+
+**Files Changed:**
+- `modified: services/analysis/metrics.ts`
+- `modified: lib/db/schema.ts`
+- `modified: services/analysis/engine.ts`
+- `modified: components/editor/EditorStatusBar.tsx`
+- `modified: types/modules.d.ts`
+- `modified: contexts/SuggestionContext.tsx`
+- `modified: hooks/useUnifiedAnalysis.ts`
+- `modified: app/globals.css`
+- `modified: components/panels/EnhancedSuggestionsPanel.tsx`
+- `modified: components/editor/BlogEditor.tsx`
+- `modified: components/editor/extensions/EnhancedGrammarDecoration.tsx`
+
+**Remaining:**
+- Begin work on Phase 6: Finalization.

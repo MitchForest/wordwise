@@ -15,6 +15,13 @@
       "when": 1750173682036,
       "tag": "0001_sour_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1750255009179,
+      "tag": "0002_classy_jocasta",
+      "breakpoints": true
     }
   ]
 }

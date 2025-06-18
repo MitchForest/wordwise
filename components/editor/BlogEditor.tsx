@@ -92,7 +92,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const { data: session } = useSession();
   const onDocumentTitleChange = useDocumentTitleUpdate();
   const documentUpdates = useDocumentUpdates();
-  const { suggestions, registerEditorActions, setHoveredSuggestionId } = useSuggestions();
+  const { suggestions, registerEditorActions, setHoveredSuggestionId, hoveredSuggestionId } = useSuggestions();
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [metaDescription, setMetaDescription] = useState(initialDocument?.metaDescription || '');
   const [author, setAuthor] = useState(initialDocument?.author || session?.user?.name || 'Anonymous');
@@ -132,6 +132,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
       TrailingNode,
       Link.configure({ openOnClick: false }),
       EnhancedGrammarDecoration.configure({
+        hoveredSuggestionId,
         onSuggestionClick: (suggestion) => {
           const suggestionElement = document.getElementById(`suggestion-${suggestion.id}`);
           if (suggestionElement) {
