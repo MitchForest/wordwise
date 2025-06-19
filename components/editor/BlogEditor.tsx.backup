@@ -17,9 +17,10 @@ import { SEOModal } from './SEOModal';
 import type { JSONContent } from '@tiptap/react';
 import { AnimatePresence } from 'framer-motion';
 import { motion } from 'framer-motion';
-import { useUnifiedAnalysis } from '@/hooks/useUnifiedAnalysis';
+import {
+  updateSuggestions,
+} from './extensions/EnhancedGrammarDecoration';
 import { useSuggestions } from '@/contexts/SuggestionContext';
-import type { UnifiedSuggestion } from '@/types/suggestions';
 
 // --- Tiptap Core Extensions ---
 import { StarterKit } from '@tiptap/starter-kit';
@@ -41,6 +42,11 @@ import { TrailingNode } from '@/components/tiptap-extension/trailing-node-extens
 import { ImageUploadNode } from '@/components/tiptap-node/image-upload-node/image-upload-node-extension';
 import { EnhancedGrammarDecoration, updateSuggestions } from './extensions/EnhancedGrammarDecoration';
 import { EditorStatusBar } from './EditorStatusBar';
+import { useUnifiedAnalysis } from '@/hooks/useUnifiedAnalysis';
+import {
+  updateSuggestions,
+} from './extensions/EnhancedGrammarDecoration';
+import { useSuggestions } from '@/contexts/SuggestionContext';
 
 // --- UI Primitives ---
 import { Spacer } from '@/components/tiptap-ui-primitive/spacer';
@@ -70,6 +76,7 @@ import { PublishingDialog } from '@/components/publishing/PublishingDialog';
 
 // --- Lib ---
 import { handleImageUpload, MAX_FILE_SIZE } from '@/lib/tiptap-utils';
+import { plainTextIndexToProseMirror } from '@/lib/editor/position-utils';
 
 // --- Styles ---
 import '@/components/tiptap-node/code-block-node/code-block-node.scss';
@@ -78,10 +85,18 @@ import '@/components/tiptap-node/image-node/image-node.scss';
 import '@/components/tiptap-node/paragraph-node/paragraph-node.scss';
 import '@/components/tiptap-templates/simple/simple-editor.scss';
 
+// Tiptap Extensions
+import { serverEditorExtensions } from '@/lib/editor/tiptap-extensions.server';
+import { clientEditorExtensions } from '@/lib/editor/tiptap-extensions';
+
 // Suggestion Management
 import { SuggestionManager } from '@/lib/editor/suggestion-manager';
 import { createSuggestionTrackingPlugin } from '@/lib/editor/extensions/suggestion-tracking';
 
+// Hooks
+import { useAutoSave } from '@/hooks/useAutoSave';
+import { useUnifiedAnalysis } from '@/hooks/useUnifiedAnalysis';
+import { useSuggestions } from '@/contexts/SuggestionContext';
 
 interface BlogEditorProps {
   documentId: string;
@@ -105,6 +120,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
     setHoveredSuggestionId,
     hoveredSuggestionId,
     setFocusedSuggestionId,
+    getSuggestions,
   } = useSuggestions();
   const [title, setTitle] = useState(initialDocument?.title || 'Untitled Document');
   const [metaDescription, setMetaDescription] = useState(initialDocument?.metaDescription || '');
@@ -114,9 +130,6 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [isSEOModalOpen, setIsSEOModalOpen] = useState(false);
-  
-  // Create suggestion manager instance
-  const suggestionManager = useRef(new SuggestionManager());
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -155,13 +168,6 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
         onHover: (id) => setHoveredSuggestionId(id),
         onLeave: () => setHoveredSuggestionId(null),
       }),
-      // Add the suggestion tracking plugin
-      Extension.create({
-        name: 'suggestionTracking',
-        addProseMirrorPlugins() {
-          return [createSuggestionTrackingPlugin(suggestionManager.current)];
-        }
-      })
     ],
     content: initialDocument?.content || '',
   });
@@ -170,34 +176,69 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   useEffect(() => {
     if (editor && registerEditorActions) {
       registerEditorActions({
-        apply: (suggestionId: string, value: string) => {
+        apply: (suggestionId, value) => {
           console.log('[Apply Fix] Starting:', { suggestionId, value });
           
-          // Get position from SuggestionManager
-          const position = suggestionManager.current.getPosition(suggestionId);
+          // Get current suggestions without causing re-render
+          const currentSuggestions = getSuggestions();
+          const suggestion = currentSuggestions.find(s => s.id === suggestionId);
           
-          if (!position) {
-            console.error('[Apply Fix] No position found for suggestion:', suggestionId);
+          if (!suggestion) {
+            console.error('[Apply Fix] Suggestion not found:', suggestionId);
             return;
           }
           
-          console.log('[Apply Fix] Applying fix at position:', position, 'with value:', value);
+          console.log('[Apply Fix] Found suggestion:', suggestion);
           
-          // Get the current text at this position to verify
-          try {
-            const currentText = editor.state.doc.textBetween(position.from, position.to);
-            console.log('[Apply Fix] Current text at position:', currentText);
-          } catch (e) {
-            console.error('[Apply Fix] Error getting text at position:', e);
+          let position: { start: number; end: number } | null = null;
+          
+          // Try to get position from text-based suggestion
+          if (suggestion.getPosition) {
+            const docText = editor.state.doc.textContent;
+            position = suggestion.getPosition(docText);
+            console.log('[Apply Fix] Text-based position (plain text):', position);
+            
+            // Convert plain text positions to ProseMirror positions
+            if (position) {
+              const pmStart = plainTextIndexToProseMirror(editor, position.start);
+              const pmEnd = plainTextIndexToProseMirror(editor, position.end);
+              
+              if (pmStart !== -1 && pmEnd !== -1) {
+                position = { start: pmStart, end: pmEnd };
+                console.log('[Apply Fix] Converted to ProseMirror positions:', position);
+              } else {
+                console.error('[Apply Fix] Failed to convert positions');
+                position = null;
+              }
+            }
+          } 
+          // Fall back to legacy position if available
+          else if (suggestion.position) {
+            position = suggestion.position;
+            console.log('[Apply Fix] Legacy position (already ProseMirror):', position);
           }
           
-          editor.chain()
-            .focus()
-            .setTextSelection({ from: position.from, to: position.to })
-            .insertContent(value)
-            .run();
+          if (position) {
+            console.log('[Apply Fix] Applying fix at position:', position, 'with value:', value);
             
-          console.log('[Apply Fix] Fix applied successfully');
+            // Get the current text at this position to verify
+            try {
+              const currentText = editor.state.doc.textBetween(position.start, position.end);
+              console.log('[Apply Fix] Current text at position:', currentText);
+            } catch (e) {
+              console.error('[Apply Fix] Error getting text at position:', e);
+            }
+            
+            editor.chain()
+              .focus()
+              .setTextSelection({ from: position.start, to: position.end })
+              .insertContent(value)
+              .run();
+              
+            console.log('[Apply Fix] Fix applied successfully');
+          } else {
+            console.error('[Apply Fix] No position found for suggestion');
+          }
         },
         getDocumentText: () => {
           const text = editor.state.doc.textContent;
@@ -210,7 +251,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
         },
       });
     }
-  }, [editor, registerEditorActions]); // Removed getSuggestions from deps
+  }, [editor, registerEditorActions, getSuggestions]); // getSuggestions is stable
 
   const { saveState, lastSaved, handleContentChange, handleTitleChange, handleMetaChange } = useAutoSave(editor, documentId);
 
@@ -222,33 +263,16 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
     keywords,
   });
 
-  // Update SuggestionManager when suggestions change
-  useEffect(() => {
-    if (editor && suggestions) {
-      console.log('[BlogEditor] Adding suggestions to SuggestionManager:', {
-        suggestionCount: suggestions.length,
-        editorDocText: editor.state.doc.textContent,
-        editorDocLength: editor.state.doc.textContent.length,
-        firstSuggestion: suggestions[0] ? {
-          id: suggestions[0].id,
-          matchText: suggestions[0].matchText,
-          category: suggestions[0].category
-        } : null
-      });
-      
-      suggestionManager.current.addSuggestions(suggestions, editor.state.doc);
-      // Force re-render of decorations
-      editor.view.dispatch(editor.state.tr);
-    }
-  }, [suggestions, editor]);
-
   useEffect(() => {
     if (editor) {
       console.log('[BlogEditor] Updating decorations with suggestions:', {
         count: suggestions.length,
-        suggestions: suggestions.map((s: UnifiedSuggestion) => ({
+        suggestions: suggestions.map(s => ({
           id: s.id,
-          matchText: s.matchText,
+          matchText: 'matchText' in s ? (s as TextBasedSuggestion).matchText : undefined,
+          contextBefore: 'contextBefore' in s ? (s as TextBasedSuggestion).contextBefore : undefined,
+          contextAfter: 'contextAfter' in s ? (s as TextBasedSuggestion).contextAfter : undefined,
+          hasGetPosition: !!s.getPosition,
           category: s.category,
           message: s.message
         }))

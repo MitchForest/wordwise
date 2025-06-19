@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/core'
-import { createSuggestion } from '@/lib/editor/suggestion-factory'
+import { createDocumentSuggestion } from '@/lib/editor/suggestion-factory'
 import { UnifiedSuggestion, SEO_SUB_CATEGORY, SEOSubCategory } from '@/types/suggestions'
 
 // Canonical Rule IDs for SEO checks. This ensures stable suggestion IDs.
@@ -109,7 +109,7 @@ export class SEOAnalyzer {
     // SEO suggestions are document-wide. By passing `undefined` for the position,
     // we ensure they will be sorted to the bottom of the suggestions list.
     this.suggestions.push(
-      createSuggestion(undefined, undefined, '_document_', '', 'seo', subCategory, ruleId, 'SEO Suggestion', message, [], 'suggestion'),
+      createDocumentSuggestion('seo', subCategory, ruleId, 'SEO Suggestion', message, [], 'suggestion'),
     )
   }
 

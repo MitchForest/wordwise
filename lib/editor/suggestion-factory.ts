@@ -3,6 +3,7 @@
  * @purpose Defines a factory function for creating standardized `UnifiedSuggestion`
  * objects. This ensures consistency and stability of suggestion data across
  * all analysis services.
+ * @modified 2024-12-28 - Improved matchText to include context for short matches
  */
 import {
   UnifiedSuggestion,
@@ -13,29 +14,28 @@ import {
 } from '@/types/suggestions';
 
 /**
- * Creates a standardized UnifiedSuggestion object with a position-based ID.
- * This ensures that the same error at the same position always gets the same ID,
- * preventing duplicate key errors in React when the same error is detected by
- * multiple analysis tiers.
+ * Creates a standardized UnifiedSuggestion object with stable ID.
+ * @purpose Create suggestions with position-independent IDs
+ * @modified 2024-12-28 - Added context for short matches to ensure uniqueness
  * 
- * @param from - The starting position of the suggestion. Can be `undefined` for document-level suggestions.
- * @param to - The ending position of the suggestion. Can be `undefined` for document-level suggestions.
- * @param originalText - The text that the suggestion is for.
- * @param contextSnippet - A snippet of surrounding context (kept for backwards compatibility but not used in ID).
- * @param category - The main category of the suggestion.
- * @param subCategory - The specific sub-category for semantic ID creation.
- * @param ruleId - The canonical, hardcoded ID for the specific rule being violated.
- * @param title - A short, descriptive title for the suggestion type.
- * @param message - The detailed message for the user.
- * @param actions - An array of actions the user can take.
- * @param severity - The severity of the suggestion.
- * @returns A standardized UnifiedSuggestion object.
+ * @param from - The starting position (used only for occurrence counting)
+ * @param to - The ending position (not stored in suggestion)
+ * @param originalText - The text that the suggestion is for
+ * @param documentText - The full document text (used only for occurrence counting)
+ * @param category - The main category of the suggestion
+ * @param subCategory - The specific sub-category
+ * @param ruleId - The canonical ID for the specific rule
+ * @param title - A short, descriptive title
+ * @param message - The detailed message for the user
+ * @param actions - An array of actions the user can take
+ * @param severity - The severity of the suggestion
+ * @returns A standardized UnifiedSuggestion object
  */
 export const createSuggestion = (
-  from: number | undefined,
-  to: number | undefined,
+  from: number,
+  to: number,
   originalText: string,
-  contextSnippet: string,
+  documentText: string,
   category: SuggestionCategory,
   subCategory: SubCategory,
   ruleId: RuleId,
@@ -44,10 +44,85 @@ export const createSuggestion = (
   actions: SuggestionAction[] = [],
   severity: 'error' | 'warning' | 'suggestion' = 'suggestion',
 ): UnifiedSuggestion => {
-  // Use position-based ID to ensure same error at same position always has same ID
-  // This prevents duplicate keys when real-time and debounced checks find the same error
-  const positionKey = from !== undefined ? from : 'global';
-  const id = `${category}:${subCategory}:${ruleId}:${positionKey}`;
+  // For very short matches (1-2 chars), we need more context to ensure uniqueness
+  // This prevents issues like matching the wrong "t" when fixing capitalization
+  let contextualMatchText = originalText;
+  
+  if (originalText.length <= 2) {
+    // Get surrounding context for short matches
+    const contextBefore = Math.max(0, from - 10);
+    const contextAfter = Math.min(documentText.length, to + 10);
+    contextualMatchText = documentText.substring(contextBefore, contextAfter);
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[createSuggestion] Short match, adding context:', {
+        originalText,
+        contextualMatchText,
+        from,
+        to,
+        contextBefore,
+        contextAfter
+      });
+    }
+  }
+  
+  // Count occurrences of the contextual text for unique identification
+  let occurrenceCount = 0;
+  let searchIndex = -1;
+  const occurrencePositions: number[] = [];
+  
+  // Debug: Check what we're searching for
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[createSuggestion] Counting occurrences:', {
+      searchText: contextualMatchText,
+      originalText,
+      currentPosition: from,
+      documentLength: documentText.length,
+      textAtCurrentPosition: documentText.substring(from, to)
+    });
+  }
+  
+  while ((searchIndex = documentText.indexOf(contextualMatchText, searchIndex + 1)) !== -1) {
+    occurrencePositions.push(searchIndex);
+    if (searchIndex < from - (contextualMatchText.length - originalText.length) / 2) {
+      occurrenceCount++;
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[createSuggestion] Found earlier occurrence:', {
+          at: searchIndex,
+          occurrenceCount
+        });
+      }
+    }
+    if (searchIndex >= from - (contextualMatchText.length - originalText.length) / 2) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[createSuggestion] Reached current position, stopping count');
+      }
+      break;
+    }
+  }
+  
+  // Generate stable ID without context
+  // Use first 8 chars of text (alphanumeric only) for readability
+  const textHash = originalText.slice(0, 8).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const id = `${ruleId}-${textHash}-${occurrenceCount}`;
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[createSuggestion] Generated ID:', {
+      id,
+      ruleId,
+      textHash,
+      occurrenceCount,
+      originalText,
+      matchText: contextualMatchText,
+      from,
+      to,
+      actualTextAtPosition: documentText.substring(from, to),
+      expectedText: originalText,
+      textMatches: documentText.substring(from, to) === originalText,
+      allOccurrences: occurrencePositions,
+      documentLength: documentText.length
+    });
+  }
   
   const suggestion: UnifiedSuggestion = {
     id,
@@ -57,15 +132,43 @@ export const createSuggestion = (
     severity,
     title,
     message,
-    context: { text: originalText },
+    matchText: contextualMatchText,
+    originalText, // Store the actual error text separately
+    originalFrom: from, // Store original position for reference
+    originalTo: to,
     actions,
+    context: { text: originalText }, // Keep for backward compatibility
   };
 
-  // Only add the position object if `from` and `to` are valid numbers.
-  // This allows for document-level suggestions that won't be sorted to the top.
-  if (from !== undefined && to !== undefined) {
-    suggestion.position = { start: from, end: to };
-  }
-
   return suggestion;
+};
+
+/**
+ * Creates a document-level suggestion (no position)
+ * @purpose Create suggestions that apply to the entire document
+ * @modified 2024-12-28 - Simplified implementation
+ */
+export const createDocumentSuggestion = (
+  category: SuggestionCategory,
+  subCategory: SubCategory,
+  ruleId: RuleId,
+  title: string,
+  message: string,
+  actions: SuggestionAction[] = [],
+  severity: 'error' | 'warning' | 'suggestion' = 'suggestion',
+): UnifiedSuggestion => {
+  // For document-level suggestions, use a simple ID
+  const id = `${ruleId}-global`;
+  
+  return {
+    id,
+    ruleId,
+    category,
+    subCategory,
+    severity,
+    title,
+    message,
+    actions,
+    context: { text: '' },
+  };
 }; 

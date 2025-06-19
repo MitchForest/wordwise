@@ -1,3 +1,8 @@
+/**
+ * @file services/analysis/style.ts
+ * @purpose Analyzes document style using write-good library
+ * @modified 2024-12-28 - Updated to use text-based suggestions
+ */
 import writeGood from 'write-good';
 import { UnifiedSuggestion, STYLE_SUB_CATEGORY, StyleSubCategory } from '@/types/suggestions';
 import { createSuggestion } from '@/lib/editor/suggestion-factory';
@@ -35,7 +40,7 @@ function mapReasonToRuleId(reason: string): string {
 }
 
 export class StyleAnalyzer {
-  public run(doc: any): UnifiedSuggestion[] {
+  public run(doc: any, documentText: string): UnifiedSuggestion[] {
     if (!doc || !doc.content) {
       return [];
     }
@@ -56,7 +61,6 @@ export class StyleAnalyzer {
         const errorText = text.substring(suggestion.index, suggestion.index + suggestion.offset);
         const subCategory = mapReasonToSubCategory(suggestion.reason);
         const ruleId = mapReasonToRuleId(suggestion.reason);
-        const contextSnippet = `${text.substring(suggestion.index - 10, suggestion.index)}...${text.substring(suggestion.index + suggestion.offset, suggestion.index + suggestion.offset + 10)}`;
 
         // Check if the suggestion is for a word that can be simply removed.
         const isRemovable = removableWords.some(phrase => suggestion.reason.includes(phrase));
@@ -76,7 +80,7 @@ export class StyleAnalyzer {
             from,
             to,
             errorText,
-            contextSnippet,
+            documentText,
             'style',
             subCategory,
             ruleId,

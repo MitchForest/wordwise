@@ -96,41 +96,132 @@ All server-side analysis logic is modular and contained within our `UnifiedAnaly
 
 ---
 
-## 4. The Text-Based Suggestion System
+## 4. The Position-Independent Suggestion System
 
-To ensure suggestions survive document edits and provide a stable user experience, our system uses **text-based matching** rather than position-based tracking.
+To ensure suggestions survive document edits and provide a stable user experience, our system separates **suggestion identity** from **position tracking**, leveraging ProseMirror's powerful position mapping capabilities.
 
-### Text-Based Suggestions
-Each suggestion stores the actual problematic text and its surrounding context, not just positions:
+### Core Architecture
+The system uses a two-layer approach:
 
 ```typescript
-interface TextBasedSuggestion {
-  id: string;                    // Hash of ruleId + matchText + context
-  matchText: string;             // The actual problematic text
-  matchContext: string;          // ~40 chars of surrounding text
-  replacementText?: string;      // The suggested fix
-  message: string;               // Explanation of the issue
-  category: string;              // spelling, grammar, style, etc.
-  
-  // Position calculated on-demand when rendering
-  getPosition(document: string): { start: number; end: number } | null;
+// Layer 1: Suggestion Identity (stable, position-independent)
+interface Suggestion {
+  id: string;              // "spelling/misspelling-helo-0"
+  ruleId: string;          // "spelling/misspelling"
+  matchText: string;       // "helo"
+  fixes: SuggestionAction[];
+  message: string;
+  severity: 'error' | 'warning';
+  category: string;
+  subCategory: string;
+}
+
+// Layer 2: Position Tracking (dynamic, updated via ProseMirror)
+interface TrackedPosition {
+  suggestionId: string;
+  from: number;           // ProseMirror position
+  to: number;             // ProseMirror position
+}
+```
+
+### Stable ID Generation
+IDs are generated using the formula: `${ruleId}-${textHash}-${occurrence}`
+- **ruleId**: The specific rule that triggered (e.g., "spelling/misspelling")
+- **textHash**: First 8 chars of the error text (normalized)
+- **occurrence**: Which instance of this rule+text combination (0-based)
+
+Example: `"grammar/punctuation-period-0"` for the first missing period
+
+### Position Tracking via ProseMirror
+Instead of searching for text, positions are tracked and updated through ProseMirror transactions:
+
+```typescript
+class SuggestionManager {
+  updatePositions(tr: Transaction): void {
+    this.positions.forEach((pos, id) => {
+      // Map positions through the transaction
+      const mappedFrom = tr.mapping.map(pos.from);
+      const mappedTo = tr.mapping.map(pos.to);
+      
+      if (mappedFrom !== null && mappedTo !== null) {
+        // Validate text hasn't changed
+        const currentText = tr.doc.textBetween(mappedFrom, mappedTo);
+        if (currentText === this.suggestions.get(id).matchText) {
+          // Update position
+          this.positions.set(id, { from: mappedFrom, to: mappedTo });
+        }
+        // Otherwise, suggestion is automatically removed
+      }
+    });
+  }
 }
 ```
 
 ### Key Benefits
-1. **Survives Edits:** When text moves, suggestions follow it
-2. **Handles Duplicates:** Multiple instances of same error tracked separately
-3. **Auto-Cleanup:** Suggestions disappear when their text is deleted
-4. **Simple Implementation:** No complex reconciliation needed
+1. **Real-time Compatible:** Works perfectly with live editing
+2. **O(1) Performance:** No text searching required
+3. **Handles All Edge Cases:** Undo/redo, collaborative editing, etc.
+4. **Automatic Cleanup:** Suggestions removed when text is edited
+5. **Position Accuracy:** Always accurate via transaction mapping
 
-### Smart Caching System
-The system maintains a paragraph-level cache to avoid re-analyzing unchanged content:
+### Implementation Details
+
+The system is implemented as a ProseMirror plugin that:
+1. Tracks all suggestion positions in the document
+2. Updates positions automatically on every transaction
+3. Validates that text at each position hasn't changed
+4. Provides decorations for visual rendering
+5. Removes suggestions when their text is edited
+
+```typescript
+// ProseMirror plugin for automatic position tracking
+const suggestionPlugin = new Plugin({
+  key: suggestionTrackingKey,
+  
+  state: {
+    apply(tr, value) {
+      // Update all positions through transaction mapping
+      value.manager.updatePositions(tr);
+      return value;
+    }
+  },
+  
+  props: {
+    decorations(state) {
+      // Return decorations for rendering suggestions
+      return DecorationSet.create(state.doc, /* ... */);
+    }
+  }
+});
+```
+
+This approach ensures suggestions remain accurate even through complex editing operations like find-and-replace, undo/redo, or collaborative edits.
+
+### Incremental Analysis System
+
+To achieve optimal performance, the system only analyzes changed content:
 
 ```typescript
 interface ParagraphCache {
   hash: string;                  // Content hash for validation
-  suggestions: TextBasedSuggestion[];
+  suggestions: Suggestion[];     // Cached analysis results
   timestamp: number;
+}
+
+class IncrementalAnalyzer {
+  analyze(previousDoc: Document, currentDoc: Document): AnalysisResult {
+    // 1. Identify changed paragraphs
+    const changes = diffParagraphs(previousDoc, currentDoc);
+    
+    // 2. Reuse cached results for unchanged paragraphs
+    const cachedResults = getCachedSuggestions(unchanged);
+    
+    // 3. Only analyze changed paragraphs
+    const newResults = analyzeChanges(changes);
+    
+    // 4. Merge and return
+    return mergeResults(cachedResults, newResults);
+  }
 }
 ```
 
@@ -138,6 +229,7 @@ This enables:
 - 80% reduction in analysis work on typical edits
 - Sub-100ms response for single word changes
 - Dramatic cost savings for AI-powered features
+- Seamless integration with the position tracking system
 
 ---
 
@@ -189,10 +281,10 @@ After Epic 1.5 improvements, WordWise achieves:
 
 ### Epic 1.5: Architecture Improvements (4 weeks)
 - ✅ Sprint 1-6: Foundation and basic features
-- 🟡 Sprint 7: Text-based suggestions
-- 🟡 Sprint 8: Incremental analysis
-- 🟡 Sprint 9: Smart responsiveness
-- 🟡 Sprint 10: Performance optimization
+- 🟡 Sprint 7: Position-independent suggestions with ProseMirror tracking
+- 🟡 Sprint 8: Incremental analysis with paragraph-level caching
+- 🟡 Sprint 9: Smart responsiveness with dynamic debouncing
+- 🟡 Sprint 10: Performance optimization with virtual scrolling
 
 ### Epic 2: AI-Enhanced Suggestions (3 weeks)
 - 🟡 Week 1: AI fix generation

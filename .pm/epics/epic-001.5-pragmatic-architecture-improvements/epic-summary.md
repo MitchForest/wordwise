@@ -4,16 +4,14 @@
 After analyzing the current WordWise architecture and the proposed Sprint 7-12 plans, this epic implements a streamlined approach that solves core issues while preparing for AI integration. This epic focuses on fixing the fundamental position-based suggestion bug by switching to text-based matching, implementing incremental analysis for 10x performance gains, and creating a clean architecture ready for AI enhancements.
 
 ## Planned Sprints
-1. **Sprint 007:** Text-Based Suggestions - Fix the position bug permanently with text-based matching
-2. **Sprint 008:** Incremental Analysis System - Only analyze what changed for 10x performance gain
-3. **Sprint 009:** Smart Responsiveness - Make the system feel intelligent and instant
-4. **Sprint 010:** Performance & Polish - Handle documents with 500+ suggestions smoothly
+1. **Sprint 007:** Position-Independent Suggestions - Fix the position bug permanently with ProseMirror tracking (COMPLETE)
+2. **Sprint 008:** Essential Optimizations - Add caching and virtual scrolling for better performance
 
 ## Technical Approach
-- **Text is the invariant**: Track WHAT text is problematic, not WHERE it is
-- **Incremental analysis**: Only re-analyze changed paragraphs, not entire documents
-- **Smart caching**: Reuse results for unchanged content
-- **Clean pipeline architecture**: Simple, extensible analyzer registration for future AI integration
+- **Position-independent IDs**: Stable identification that survives edits
+- **ProseMirror position tracking**: Leverage built-in transaction mapping
+- **Simple caching**: Reuse analysis results for unchanged content
+- **Virtual scrolling**: Handle large suggestion lists efficiently
 - **Progressive enhancement**: Local checks first, then remote AI
 
 ## Success Criteria
@@ -26,8 +24,41 @@ After analyzing the current WordWise architecture and the proposed Sprint 7-12 p
 - [ ] Successful migration of all users without disruption
 
 ## Key Benefits
-- **Ships in 4 weeks** instead of original 8.5 week plan
-- **Each sprint delivers visible improvements** to users
-- **Lower risk** with incremental changes
-- **10x performance improvement** measured, not theoretical
+- **Ships in 1 week** instead of original 8.5 week plan
+- **Focused on high-impact improvements** that users will notice
+- **Lower risk** with minimal changes
+- **Better performance** through caching and virtual scrolling
 - **AI-ready architecture** without over-engineering 
+
+## Sprint Breakdown
+
+### Sprint 007: Text-Based Suggestions (1 week) ✅ COMPLETE
+**Goal:** Fix position bug permanently by converting to text-based matching
+
+**Key Features:**
+- Convert from position-based to text-based suggestion tracking
+- Implement exact string matching with occurrence counting
+- Add automatic suggestion cleanup when text deleted
+- Use content-based IDs (djb2 hash) for stability
+
+**Success Metrics:**
+- Zero position-related console errors
+- Suggestions survive document edits
+- Performance: <5ms position lookup
+
+**Status:** Complete - All features implemented, race conditions fixed, tests passing
+
+### Sprint 008: Essential Optimizations (3 days)
+**Goal:** Implement high-impact, low-complexity improvements
+
+**Key Features:**
+- Add caching to fast analysis endpoint (5 minute TTL)
+- Implement virtual scrolling for 500+ suggestions
+- Test performance with large documents
+
+**Success Metrics:**
+- Cache hit rate > 50% for typical editing
+- Smooth 60fps scrolling with 1000+ suggestions
+- < 50MB memory usage
+
+**Status:** Planning - Ready to implement 
