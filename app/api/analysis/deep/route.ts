@@ -23,14 +23,14 @@ async function getEngine() {
 
 export async function POST(request: Request) {
   try {
-    const { doc: jsonDoc, documentMetadata } = await request.json();
+    const { doc: jsonDoc, documentMetadata, enableSEOChecks = true } = await request.json();
 
     if (!jsonDoc || !documentMetadata) {
       return NextResponse.json({ error: 'Missing document content or metadata' }, { status: 400 });
     }
 
     // --- Caching Logic ---
-    const contentHash = createHash('sha256').update(JSON.stringify({ jsonDoc, documentMetadata })).digest('hex');
+    const contentHash = createHash('sha256').update(JSON.stringify({ jsonDoc, documentMetadata, enableSEOChecks })).digest('hex');
     const cachedResult = await analysisCache.getAsync(contentHash);
     if (cachedResult) {
       return NextResponse.json(cachedResult);
@@ -43,7 +43,15 @@ export async function POST(request: Request) {
     const engine = await getEngine();
     const { metrics, suggestions } = await engine.runDeepChecks(doc, documentMetadata);
 
-    const result = { suggestions, metrics };
+    // Filter out SEO suggestions if not enabled
+    const filteredSuggestions = enableSEOChecks 
+      ? suggestions 
+      : suggestions.filter(s => s.category !== 'seo');
+
+    const result = { 
+      suggestions: filteredSuggestions, 
+      metrics 
+    };
 
     // --- Caching Logic ---
     analysisCache.set(contentHash, result, 3600); // Cache for 1 hour

@@ -11,10 +11,14 @@ Improve AI enhancement quality through better context awareness, implement user 
 
 ### 1. Context-Aware Enhancement
 
-#### 1.1 Enhanced Document Context with Paragraph-Level Analysis
+#### 1.1 Enhanced Document Context with Retext AST Integration
 ```typescript
 // services/ai/document-context.ts (enhanced version)
 import { createHash } from 'crypto';
+import { unified } from 'unified';
+import retextEnglish from 'retext-english';
+import { visit } from 'unist-util-visit';
+import type { Root, Paragraph } from 'retext';
 
 export interface ParagraphContext {
   id: string;
@@ -23,6 +27,7 @@ export interface ParagraphContext {
   position: number;
   hasChanged: boolean;
   suggestions: string[]; // suggestion IDs in this paragraph
+  retextNode?: Paragraph; // Store retext AST node for AI context
 }
 
 export interface EnhancedDocumentContext extends DocumentContext {
@@ -31,6 +36,7 @@ export interface EnhancedDocumentContext extends DocumentContext {
   documentLength: number;
   averageParagraphLength: number;
   writingStyle: WritingStyle;
+  retextTree?: Root; // Store full retext AST for advanced analysis
 }
 
 export interface WritingStyle {
@@ -42,13 +48,18 @@ export interface WritingStyle {
 
 export class EnhancedDocumentContextExtractor {
   private previousHashes = new Map<string, string>();
+  private retextProcessor = unified().use(retextEnglish);
   
-  extract(
+  async extract(
     doc: any, 
     suggestions: UnifiedSuggestion[],
     previousContext?: EnhancedDocumentContext
-  ): EnhancedDocumentContext {
-    const paragraphs = this.extractParagraphContexts(doc, suggestions, previousContext);
+  ): Promise<EnhancedDocumentContext> {
+    // Parse document with retext for better structure understanding
+    const text = doc.textContent;
+    const retextTree = await this.retextProcessor.parse(text);
+    
+    const paragraphs = await this.extractParagraphContexts(doc, suggestions, previousContext, retextTree);
     const writingStyle = this.analyzeWritingStyle(paragraphs);
     
     return {
@@ -60,22 +71,25 @@ export class EnhancedDocumentContextExtractor {
       documentLength: doc.textContent.length,
       averageParagraphLength: this.calculateAverageParagraphLength(paragraphs),
       writingStyle,
-      previousHashes: new Map(this.previousHashes)
+      previousHashes: new Map(this.previousHashes),
+      retextTree
     };
   }
   
-  private extractParagraphContexts(
+  private async extractParagraphContexts(
     doc: any,
     suggestions: UnifiedSuggestion[],
-    previousContext?: EnhancedDocumentContext
-  ): ParagraphContext[] {
+    previousContext?: EnhancedDocumentContext,
+    retextTree?: Root
+  ): Promise<ParagraphContext[]> {
     const paragraphs: ParagraphContext[] = [];
     let position = 0;
     let paragraphIndex = 0;
     
-    // Create suggestion position map
+    // Create suggestion position map using SuggestionManager positions
     const suggestionPositions = new Map<number, string[]>();
     suggestions.forEach(s => {
+      // Use originalFrom which is tracked by SuggestionManager
       if (s.originalFrom !== undefined) {
         const existing = suggestionPositions.get(s.originalFrom) || [];
         existing.push(s.id);
@@ -83,6 +97,15 @@ export class EnhancedDocumentContextExtractor {
       }
     });
     
+    // Extract retext paragraphs for mapping
+    const retextParagraphs: Paragraph[] = [];
+    if (retextTree) {
+      visit(retextTree, 'ParagraphNode', (node: Paragraph) => {
+        retextParagraphs.push(node);
+      });
+    }
+    
+    // Use hybrid approach: ProseMirror for structure, retext for linguistic analysis
     doc.descendants((node: any) => {
       if (node.type.name === 'paragraph') {
         const content = node.textContent;
@@ -102,13 +125,17 @@ export class EnhancedDocumentContextExtractor {
           }
         }
         
+        // Map to retext paragraph node if available
+        const retextNode = retextParagraphs[paragraphIndex];
+        
         paragraphs.push({
           id,
           content,
           hash,
           position: paragraphIndex,
           hasChanged,
-          suggestions: paragraphSuggestions
+          suggestions: paragraphSuggestions,
+          retextNode
         });
         
         // Update hash tracking
@@ -331,11 +358,11 @@ export class IncrementalAnalyzer {
 
 ### 2. User Action Tracking for Learning
 
-#### 2.1 Suggestion Feedback Tracking
+#### 2.1 Suggestion Feedback Tracking with Source Attribution
 ```typescript
 // services/ai/suggestion-feedback.ts
 import { db } from '@/lib/db';
-import { pgTable, text, timestamp, jsonb, boolean, real } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, boolean, real, integer } from 'drizzle-orm/pg-core';
 
 // Add to schema.ts
 export const suggestionFeedback = pgTable('suggestion_feedback', {
@@ -352,6 +379,10 @@ export const suggestionFeedback = pgTable('suggestion_feedback', {
   aiFix: text('ai_fix'),
   aiConfidence: real('ai_confidence'),
   
+  // Source tracking for hybrid architecture
+  source: text('source').notNull(), // 'retext' | 'server' | 'ai-enhanced'
+  retextPlugin: text('retext_plugin'), // Which retext plugin generated this
+  
   // User action
   action: text('action').notNull(), // 'accepted' | 'rejected' | 'modified' | 'ignored'
   appliedFix: text('applied_fix'), // What was actually applied
@@ -362,6 +393,7 @@ export const suggestionFeedback = pgTable('suggestion_feedback', {
     topic: string;
     tone: string;
     paragraphContent: string;
+    retextAST?: any; // Store relevant AST portion for learning
   }>(),
   
   // Metadata
@@ -370,7 +402,7 @@ export const suggestionFeedback = pgTable('suggestion_feedback', {
 
 export class SuggestionFeedbackTracker {
   private pendingSuggestions = new Map<string, {
-    suggestion: EnhancedSuggestion;
+    suggestion: UnifiedSuggestion | EnhancedSuggestion;
     shownAt: number;
     documentId: string;
     context: any;
@@ -380,7 +412,7 @@ export class SuggestionFeedbackTracker {
   trackSuggestionShown(
     userId: string,
     documentId: string,
-    suggestion: EnhancedSuggestion,
+    suggestion: UnifiedSuggestion | EnhancedSuggestion,
     context: any
   ): void {
     const key = `${userId}-${suggestion.id}`;
@@ -410,6 +442,12 @@ export class SuggestionFeedbackTracker {
     const timeToAction = Date.now() - pending.shownAt;
     const { suggestion, documentId, context } = pending;
     
+    // Determine source from suggestion
+    let source: string = suggestion.source || 'unknown';
+    if ('aiEnhanced' in suggestion && suggestion.aiEnhanced) {
+      source = 'ai-enhanced';
+    }
+    
     try {
       await db.insert(suggestionFeedback).values({
         id: `${userId}-${suggestionId}-${Date.now()}`,
@@ -418,24 +456,27 @@ export class SuggestionFeedbackTracker {
         suggestionId,
         category: suggestion.category,
         subCategory: suggestion.subCategory,
-        originalText: suggestion.context.text,
-        suggestedFix: suggestion.actions[0]?.value,
-        aiFix: suggestion.aiFix,
-        aiConfidence: suggestion.aiConfidence,
+        originalText: suggestion.matchText || suggestion.context?.text || '',
+        suggestedFix: suggestion.actions?.[0]?.value,
+        aiFix: 'aiFix' in suggestion ? suggestion.aiFix : undefined,
+        aiConfidence: 'aiConfidence' in suggestion ? suggestion.aiConfidence : undefined,
+        source,
+        retextPlugin: suggestion.metadata?.retextSource,
         action,
         appliedFix,
         timeToAction,
         documentContext: {
           topic: context.detectedTopic || 'unknown',
           tone: context.detectedTone || 'neutral',
-          paragraphContent: context.paragraphContent || ''
+          paragraphContent: context.paragraphContent || '',
+          retextAST: context.retextNode // Store AST for learning
         }
       });
       
       // Clean up
       this.pendingSuggestions.delete(key);
       
-      console.log(`[Feedback] Tracked ${action} for ${suggestion.category}:${suggestion.subCategory}`);
+      console.log(`[Feedback] Tracked ${action} for ${suggestion.category}:${suggestion.subCategory} from ${source}`);
     } catch (error) {
       console.error('[Feedback] Error tracking user action:', error);
     }
@@ -578,16 +619,29 @@ export interface CommonCorrection {
 }
 ```
 
-#### 2.2 Integration with Suggestion Context
+#### 2.2 Integration with Suggestion Context (Supporting Both Sources)
 ```typescript
 // contexts/SuggestionContext.tsx (additions)
 import { SuggestionFeedbackTracker } from '@/services/ai/suggestion-feedback';
+import { useSuggestionManager } from '@/hooks/useSuggestionManager';
 
 const feedbackTracker = new SuggestionFeedbackTracker();
+const suggestionManager = useSuggestionManager();
 
 // Add to context
-const trackSuggestionShown = useCallback((suggestion: EnhancedSuggestion) => {
+const trackSuggestionShown = useCallback((suggestion: UnifiedSuggestion | EnhancedSuggestion) => {
   if (session?.user?.id && documentId) {
+    // Get paragraph context using SuggestionManager positions
+    const paragraphContent = documentContext?.paragraphs?.find(p => {
+      if (suggestion.originalFrom !== undefined && suggestion.originalTo !== undefined) {
+        // Check if suggestion position falls within paragraph
+        const paraStart = p.position * 100; // Approximate position
+        const paraEnd = paraStart + p.content.length;
+        return suggestion.originalFrom >= paraStart && suggestion.originalFrom < paraEnd;
+      }
+      return p.suggestions.includes(suggestion.id);
+    });
+    
     feedbackTracker.trackSuggestionShown(
       session.user.id,
       documentId,
@@ -595,9 +649,8 @@ const trackSuggestionShown = useCallback((suggestion: EnhancedSuggestion) => {
       {
         detectedTopic: documentContext?.detectedTopic,
         detectedTone: documentContext?.detectedTone,
-        paragraphContent: documentContext?.paragraphs?.find(p => 
-          p.suggestions.includes(suggestion.id)
-        )?.content
+        paragraphContent: paragraphContent?.content,
+        retextNode: paragraphContent?.retextNode // Include AST node
       }
     );
   }
@@ -610,7 +663,7 @@ const applySuggestion = useCallback((suggestionId: string, value: string) => {
   
   // Track user action
   if (session?.user?.id) {
-    const action = value === suggestion.actions[0]?.value ? 'accepted' : 'modified';
+    const action = value === suggestion.actions?.[0]?.value ? 'accepted' : 'modified';
     feedbackTracker.trackUserAction(
       session.user.id,
       suggestionId,
@@ -619,8 +672,18 @@ const applySuggestion = useCallback((suggestionId: string, value: string) => {
     );
   }
   
-  // ... existing apply logic ...
-}, [suggestions, editor, session]);
+  // Use SuggestionManager to apply with position tracking
+  const position = suggestionManager.getSuggestionPosition(suggestionId);
+  if (position && suggestion.originalFrom !== undefined && suggestion.originalTo !== undefined) {
+    editor.commands.command(({ tr }) => {
+      tr.replaceWith(position.from, position.to, editor.schema.text(value));
+      return true;
+    });
+    
+    // Remove from manager after applying
+    suggestionManager.removeSuggestion(suggestionId);
+  }
+}, [suggestions, editor, session, suggestionManager]);
 
 // Update ignoreSuggestion to track feedback
 const ignoreSuggestion = useCallback((suggestionId: string) => {
@@ -633,8 +696,10 @@ const ignoreSuggestion = useCallback((suggestionId: string) => {
     );
   }
   
-  // ... existing ignore logic ...
-}, [session]);
+  // Remove from both UI and manager
+  setSuggestions(prev => prev.filter(s => s.id !== suggestionId));
+  suggestionManager.removeSuggestion(suggestionId);
+}, [session, suggestionManager]);
 ```
 
 ### 3. Usage Dashboard
@@ -836,13 +901,14 @@ import { AIUsageDashboard } from '@/components/settings/AIUsageDashboard';
 </TabsContent>
 ```
 
-### 4. Enhanced AI Service with Context
+### 4. Enhanced AI Service with Hybrid Architecture Support
 
-#### 4.1 Updated AI Enhancement Service with Streaming
+#### 4.1 Updated AI Enhancement Service for Retext Integration
 ```typescript
 // services/ai/enhancement-service.ts (updates)
 import { streamObject, APICallError } from 'ai';
 import { openai } from '@ai-sdk/openai';
+import { SuggestionDeduplicator } from '@/services/analysis/suggestion-deduplicator';
 
 export class AIEnhancementService {
   private incrementalAnalyzer = new IncrementalAnalyzer();
@@ -852,10 +918,23 @@ export class AIEnhancementService {
     context: EnhancedDocumentContext,
     userPreferences?: UserWritingPreferences
   ): Promise<IncrementalAnalysisResult> {
-    // Use incremental analysis
+    // Filter suggestions that need AI enhancement
+    const toEnhance = suggestions.filter(s => {
+      // Always enhance server-side suggestions
+      if (s.source === 'server') return true;
+      
+      // Selectively enhance retext suggestions
+      if (s.source === 'retext') {
+        return SuggestionDeduplicator.shouldEnhance(s);
+      }
+      
+      return false;
+    });
+    
+    // Use incremental analysis only for suggestions that need enhancement
     const result = await this.incrementalAnalyzer.analyzeIncrementally(
       context,
-      suggestions,
+      toEnhance,
       this
     );
     
@@ -864,7 +943,9 @@ export class AIEnhancementService {
       analyzed: result.analyzedParagraphs,
       cacheHitRate: `${Math.round(result.cacheHitRate * 100)}%`,
       cached: result.cachedSuggestions.length,
-      new: result.newSuggestions.length
+      new: result.newSuggestions.length,
+      enhanced: toEnhance.length,
+      skipped: suggestions.length - toEnhance.length
     });
     
     return result;
@@ -1032,13 +1113,21 @@ User Preferences:
 - Common corrections: ${preferences.writingStyle.commonCorrections.slice(0, 3).map(c => `${c.from} → ${c.to}`).join(', ')}`;
     }
 
+    // Group suggestions by source for context
+    const retextSuggestions = suggestions.filter(s => s.source === 'retext');
+    const serverSuggestions = suggestions.filter(s => s.source === 'server');
+    
     prompt += `
+
+Note: This document uses a hybrid analysis system:
+- ${retextSuggestions.length} suggestions from client-side retext analysis
+- ${serverSuggestions.length} suggestions from server-side deep analysis
 
 For each suggestion:
 1. If it has fixes, evaluate if they're contextually appropriate
 2. Consider the user's writing style and preferences
-3. If fixes could be better, provide an enhanced fix
-4. If no fixes exist, generate the best fix
+3. For retext suggestions, provide context-aware enhancements
+4. For server suggestions, refine based on document context
 5. Rate your confidence (0-1) in the enhancement
 6. Explain your reasoning briefly
 
@@ -1047,16 +1136,24 @@ ${isEnhanced && preferences ? 'Pay special attention to maintaining consistency 
 Suggestions to enhance:
 ${suggestions.map(s => {
   const paragraphContext = isEnhanced ? 
-    (context as EnhancedDocumentContext).paragraphs.find(p => 
-      p.suggestions.includes(s.id)
-    )?.content : '';
+    (context as EnhancedDocumentContext).paragraphs.find(p => {
+      // Use position-based matching for retext suggestions
+      if (s.source === 'retext' && s.originalFrom !== undefined) {
+        const paraStart = p.position * 100; // Approximate
+        const paraEnd = paraStart + p.content.length;
+        return s.originalFrom >= paraStart && s.originalFrom < paraEnd;
+      }
+      return p.suggestions.includes(s.id);
+    })?.content : '';
   
   return `
 ID: ${s.id}
+Source: ${s.source || 'unknown'}
 Category: ${s.category}
-Error text: "${s.matchText}"
+Error text: "${s.matchText || s.context?.text || ''}"
 Issue: ${s.message}
-Current fixes: ${s.actions.filter(a => a.type === 'fix').map(a => `"${a.value}"`).join(', ') || 'none'}
+Current fixes: ${s.actions?.filter(a => a.type === 'fix').map(a => `"${a.value}"`).join(', ') || 'none'}
+${s.metadata?.retextSource ? `Retext plugin: ${s.metadata.retextSource}` : ''}
 ${paragraphContext ? `Paragraph: "${paragraphContext.substring(0, 200)}..."` : ''}
 `;
 }).join('\n')}`;
@@ -1097,7 +1194,7 @@ export async function GET(
 }
 ```
 
-#### 5.2 Updated AI Enhancement API with Streaming Support
+#### 5.2 Updated AI Enhancement API with Hybrid Support
 ```typescript
 // app/api/analysis/ai-enhance/route.ts (updates)
 export async function POST(request: Request) {
@@ -1107,8 +1204,9 @@ export async function POST(request: Request) {
     
     // ... existing auth and limit checks ...
     
-    // Extract enhanced context
-    const enhancedContext = contextExtractor.extract(doc, suggestions);
+    // Extract enhanced context with retext AST support
+    const contextExtractor = new EnhancedDocumentContextExtractor();
+    const enhancedContext = await contextExtractor.extract(doc, suggestions);
     enhancedContext.title = metadata?.title || enhancedContext.title;
     
     // Get user preferences
@@ -1279,6 +1377,10 @@ CREATE TABLE IF NOT EXISTS suggestion_feedback (
   ai_fix TEXT,
   ai_confidence REAL,
   
+  -- Source tracking for hybrid architecture
+  source TEXT NOT NULL,
+  retext_plugin TEXT,
+  
   -- User action
   action TEXT NOT NULL CHECK (action IN ('accepted', 'rejected', 'modified', 'ignored')),
   applied_fix TEXT,
@@ -1294,6 +1396,7 @@ CREATE TABLE IF NOT EXISTS suggestion_feedback (
 CREATE INDEX idx_feedback_user ON suggestion_feedback(user_id);
 CREATE INDEX idx_feedback_category ON suggestion_feedback(category, sub_category);
 CREATE INDEX idx_feedback_action ON suggestion_feedback(action);
+CREATE INDEX idx_feedback_source ON suggestion_feedback(source);
 CREATE INDEX idx_feedback_created ON suggestion_feedback(created_at);
 ```
 
@@ -1302,7 +1405,7 @@ CREATE INDEX idx_feedback_created ON suggestion_feedback(created_at);
 ### Unit Tests
 ```typescript
 // tests/incremental-analysis.test.ts
-describe('Incremental Analysis', () => {
+describe('Incremental Analysis with Hybrid Sources', () => {
   it('should only analyze changed paragraphs', () => {
     // Test paragraph change detection
   });
@@ -1311,19 +1414,27 @@ describe('Incremental Analysis', () => {
     // Test cache behavior
   });
   
-  it('should calculate correct cache hit rates', () => {
-    // Test metrics calculation
+  it('should handle mixed retext/server suggestions', () => {
+    // Test hybrid suggestion handling
+  });
+  
+  it('should respect source priorities in caching', () => {
+    // Test that AI-enhanced suggestions override cached retext
   });
 });
 
 // tests/user-preferences.test.ts
-describe('User Preferences Analysis', () => {
-  it('should correctly calculate acceptance rates', () => {
-    // Test acceptance rate calculation
+describe('User Preferences with Source Attribution', () => {
+  it('should track preferences by source', () => {
+    // Test source-specific preference tracking
   });
   
-  it('should identify commonly ignored rules', () => {
-    // Test ignored rules detection
+  it('should identify which retext plugins users ignore', () => {
+    // Test retext plugin-specific feedback
+  });
+  
+  it('should learn from both client and server suggestions', () => {
+    // Test hybrid learning
   });
 });
 ```
@@ -1331,18 +1442,22 @@ describe('User Preferences Analysis', () => {
 ## Success Metrics
 
 - [ ] Incremental analysis reduces AI calls by 60%+
-- [ ] User preferences successfully tracked and stored
+- [ ] User preferences successfully tracked for both retext and server suggestions
 - [ ] Context-aware enhancements show higher acceptance rate
-- [ ] Usage dashboard provides clear insights
+- [ ] Usage dashboard provides source-specific insights
 - [ ] Cache hit rate > 60% for typical editing sessions
 - [ ] Preference-based suggestions have 20%+ higher acceptance
+- [ ] Retext suggestions properly integrated with feedback system
+- [ ] Position tracking maintains accuracy across sources
 
 ## Dependencies
 
-- [ ] Database migrations for suggestion_feedback table
-- [ ] Enhanced context extraction implemented
+- [ ] Database migrations for suggestion_feedback table with source tracking
+- [ ] Enhanced context extraction with retext AST support
 - [ ] User session available in suggestion context
-- [ ] Sprint 001 completed successfully
+- [ ] Sprint 001.75 (Retext Architecture) completed successfully
+- [ ] SuggestionManager integration for position tracking
+- [ ] Hybrid deduplication system in place
 
 ## Notes
 
@@ -1350,4 +1465,8 @@ describe('User Preferences Analysis', () => {
 - Use preferences as hints, not hard rules
 - Monitor cache size to prevent memory issues
 - Consider privacy implications of tracking
-- Plan for data export/deletion for GDPR compliance 
+- Plan for data export/deletion for GDPR compliance
+- Source attribution helps identify which analysis methods work best
+- Retext AST storage enables future ML improvements
+- Position tracking via SuggestionManager ensures consistency
+- Hybrid architecture requires careful deduplication logic 

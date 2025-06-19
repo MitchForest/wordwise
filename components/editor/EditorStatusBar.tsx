@@ -9,8 +9,13 @@
 import React from 'react';
 import { AlertCircle, CheckCircle, BarChart2, BookOpen, Clock, Pilcrow } from 'lucide-react';
 import { useSuggestions } from '@/contexts/SuggestionContext';
+import { Button } from '@/components/ui/button';
 
-export function EditorStatusBar() {
+interface EditorStatusBarProps {
+  onCheckSEO?: () => void;
+}
+
+export function EditorStatusBar({ onCheckSEO }: EditorStatusBarProps) {
   const { suggestions, metrics, setFilter } = useSuggestions();
 
   const handleSuggestionsClick = () => {
@@ -25,11 +30,23 @@ export function EditorStatusBar() {
           value={metrics ? `${metrics.grammarScore}` : '--'}
           icon={CheckCircle}
         />
-        <Metric
-          title="SEO"
-          value={metrics ? `${metrics.seoScore}` : '--'}
-          icon={BarChart2}
-        />
+        <div className="flex items-center gap-2">
+          <Metric
+            title="SEO"
+            value={metrics ? `${metrics.seoScore}` : '--'}
+            icon={BarChart2}
+          />
+          {onCheckSEO && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onCheckSEO}
+              className="h-7 px-2 text-xs"
+            >
+              Check SEO
+            </Button>
+          )}
+        </div>
         <Metric
           title="Readability"
           value={metrics ? metrics.readingLevel : '--'}

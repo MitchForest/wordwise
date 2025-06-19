@@ -5,13 +5,13 @@
 **Status**: Planning
 
 ## Sprint Goal
-Optimize AI enhancement performance and costs, add user preferences UI, implement advanced caching strategies, and polish the entire AI enhancement experience with comprehensive monitoring.
+Optimize AI enhancement performance and costs, add user preferences UI, implement advanced caching strategies for both retext and AI results, and polish the entire enhancement experience with comprehensive monitoring that tracks both client-side and server-side performance.
 
 ## Key Features
 
 ### 1. Advanced Caching System
 
-#### 1.1 Multi-Level Cache Strategy
+#### 1.1 Multi-Level Cache Strategy for Retext and AI Results
 ```typescript
 // services/ai/advanced-cache.ts
 import { LRUCache } from 'lru-cache';
@@ -24,7 +24,9 @@ export interface CacheEntry<T> {
     hits: number;
     lastAccessed: number;
     size: number;
-    source: 'ai' | 'local' | 'hybrid';
+    source: 'ai' | 'retext' | 'hybrid';
+    analysisType?: 'client' | 'server';
+    processingTime?: number;
   };
 }
 
@@ -34,6 +36,12 @@ export class AdvancedAICache {
   
   // L2: IndexedDB for persistent cache
   private l2CacheReady = false;
+  
+  // Retext analysis cache (client-side results)
+  private retextCache: LRUCache<string, CacheEntry<any>>;
+  
+  // AI enhancement cache (server-side results)
+  private aiEnhancementCache: LRUCache<string, CacheEntry<any>>;
   
   // Common fixes cache (pre-computed)
   private commonFixesCache = new Map<string, string>();
@@ -52,13 +60,48 @@ export class AdvancedAICache {
       updateAgeOnHas: true
     });
     
+    // Dedicated retext cache with longer TTL (analysis doesn't change)
+    this.retextCache = new LRUCache({
+      max: 1000, // more items since retext results are smaller
+      maxSize: 25 * 1024 * 1024, // 25MB
+      sizeCalculation: (value: CacheEntry<any>) => value.metadata.size,
+      ttl: 1000 * 60 * 60 * 24, // 24 hours
+      updateAgeOnGet: true
+    });
+    
+    // AI enhancement cache with shorter TTL
+    this.aiEnhancementCache = new LRUCache({
+      max: 200,
+      maxSize: 25 * 1024 * 1024, // 25MB
+      sizeCalculation: (value: CacheEntry<any>) => value.metadata.size,
+      ttl: 1000 * 60 * 60, // 1 hour
+      updateAgeOnGet: true
+    });
+    
     this.initializeL2Cache();
     this.preloadCommonFixes();
   }
   
-  // Get with multi-level fallback
-  async get<T>(key: string): Promise<T | null> {
-    // Check L1 first
+  // Get with multi-level fallback and cache type awareness
+  async get<T>(key: string, cacheType?: 'retext' | 'ai' | 'general'): Promise<T | null> {
+    // Check appropriate cache based on type
+    if (cacheType === 'retext') {
+      const retextEntry = this.retextCache.get(key);
+      if (retextEntry) {
+        retextEntry.metadata.hits++;
+        retextEntry.metadata.lastAccessed = Date.now();
+        return retextEntry.data as T;
+      }
+    } else if (cacheType === 'ai') {
+      const aiEntry = this.aiEnhancementCache.get(key);
+      if (aiEntry) {
+        aiEntry.metadata.hits++;
+        aiEntry.metadata.lastAccessed = Date.now();
+        return aiEntry.data as T;
+      }
+    }
+    
+    // Check L1 for general cache
     const l1Entry = this.l1Cache.get(key);
     if (l1Entry) {
       l1Entry.metadata.hits++;
@@ -70,8 +113,14 @@ export class AdvancedAICache {
     if (this.l2CacheReady) {
       const l2Entry = await this.getFromL2<T>(key);
       if (l2Entry) {
-        // Promote to L1
-        this.l1Cache.set(key, l2Entry);
+        // Promote to appropriate cache
+        if (l2Entry.metadata.source === 'retext') {
+          this.retextCache.set(key, l2Entry);
+        } else if (l2Entry.metadata.source === 'ai') {
+          this.aiEnhancementCache.set(key, l2Entry);
+        } else {
+          this.l1Cache.set(key, l2Entry);
+        }
         return l2Entry.data;
       }
     }
@@ -79,11 +128,13 @@ export class AdvancedAICache {
     return null;
   }
   
-  // Set with intelligent placement
+  // Set with intelligent placement and cache type routing
   async set<T>(key: string, data: T, options?: {
     ttl?: number;
     priority?: 'high' | 'normal' | 'low';
-    source?: 'ai' | 'local' | 'hybrid';
+    source?: 'ai' | 'retext' | 'hybrid';
+    analysisType?: 'client' | 'server';
+    processingTime?: number;
   }): Promise<void> {
     const size = JSON.stringify(data).length;
     const entry: CacheEntry<T> = {
@@ -93,14 +144,26 @@ export class AdvancedAICache {
         hits: 0,
         lastAccessed: Date.now(),
         size,
-        source: options?.source || 'ai'
+        source: options?.source || 'ai',
+        analysisType: options?.analysisType,
+        processingTime: options?.processingTime
       }
     };
     
-    // Always set in L1
-    this.l1Cache.set(key, entry, {
-      ttl: options?.ttl
-    });
+    // Route to appropriate cache based on source
+    if (options?.source === 'retext') {
+      this.retextCache.set(key, entry, {
+        ttl: options?.ttl
+      });
+    } else if (options?.source === 'ai') {
+      this.aiEnhancementCache.set(key, entry, {
+        ttl: options?.ttl
+      });
+    } else {
+      this.l1Cache.set(key, entry, {
+        ttl: options?.ttl
+      });
+    }
     
     // Set in L2 for persistence
     if (this.l2CacheReady && options?.priority !== 'low') {
@@ -176,28 +239,46 @@ export class AdvancedAICache {
     return similar;
   }
   
-  // Get cache statistics
+  // Get cache statistics with separate tracking for retext and AI
   getStats(): CacheStats {
     const l1Stats = {
       size: this.l1Cache.size,
       maxSize: this.l1Cache.maxSize,
       itemCount: this.l1Cache.size,
-      hitRate: this.calculateHitRate()
+      hitRate: this.calculateHitRate(this.l1Cache)
+    };
+    
+    const retextStats = {
+      size: this.retextCache.size,
+      maxSize: this.retextCache.maxSize,
+      itemCount: this.retextCache.size,
+      hitRate: this.calculateHitRate(this.retextCache)
+    };
+    
+    const aiStats = {
+      size: this.aiEnhancementCache.size,
+      maxSize: this.aiEnhancementCache.maxSize,
+      itemCount: this.aiEnhancementCache.size,
+      hitRate: this.calculateHitRate(this.aiEnhancementCache)
     };
     
     return {
       l1: l1Stats,
+      retext: retextStats,
+      ai: aiStats,
       commonFixes: this.commonFixesCache.size,
-      totalMemoryUsage: this.l1Cache.calculatedSize || 0,
+      totalMemoryUsage: (this.l1Cache.calculatedSize || 0) + 
+                       (this.retextCache.calculatedSize || 0) + 
+                       (this.aiEnhancementCache.calculatedSize || 0),
       cacheEfficiency: this.calculateEfficiency()
     };
   }
   
-  private calculateHitRate(): number {
+  private calculateHitRate(cache: LRUCache<string, CacheEntry<any>>): number {
     let totalHits = 0;
     let totalAccesses = 0;
     
-    this.l1Cache.forEach((entry) => {
+    cache.forEach((entry) => {
       totalHits += entry.metadata.hits;
       totalAccesses += entry.metadata.hits + 1; // +1 for the initial set
     });
@@ -206,11 +287,22 @@ export class AdvancedAICache {
   }
   
   private calculateEfficiency(): number {
-    // Efficiency based on hit rate and cache size utilization
-    const hitRate = this.calculateHitRate();
-    const sizeUtilization = (this.l1Cache.calculatedSize || 0) / this.l1Cache.maxSize;
+    // Efficiency based on hit rates across all caches and size utilization
+    const l1HitRate = this.calculateHitRate(this.l1Cache);
+    const retextHitRate = this.calculateHitRate(this.retextCache);
+    const aiHitRate = this.calculateHitRate(this.aiEnhancementCache);
     
-    return (hitRate * 0.7 + sizeUtilization * 0.3);
+    const avgHitRate = (l1HitRate + retextHitRate + aiHitRate) / 3;
+    
+    const totalSize = (this.l1Cache.calculatedSize || 0) + 
+                     (this.retextCache.calculatedSize || 0) + 
+                     (this.aiEnhancementCache.calculatedSize || 0);
+    const totalMaxSize = this.l1Cache.maxSize + 
+                        this.retextCache.maxSize + 
+                        this.aiEnhancementCache.maxSize;
+    const sizeUtilization = totalSize / totalMaxSize;
+    
+    return (avgHitRate * 0.7 + sizeUtilization * 0.3);
   }
   
   // L2 Cache implementation (IndexedDB)
@@ -294,18 +386,31 @@ interface CacheStats {
     itemCount: number;
     hitRate: number;
   };
+  retext: {
+    size: number;
+    maxSize: number;
+    itemCount: number;
+    hitRate: number;
+  };
+  ai: {
+    size: number;
+    maxSize: number;
+    itemCount: number;
+    hitRate: number;
+  };
   commonFixes: number;
   totalMemoryUsage: number;
   cacheEfficiency: number;
 }
 ```
 
-#### 1.2 Cross-Document Cache Sharing
+#### 1.2 Cross-Document Cache Sharing for Retext and AI Results
 ```typescript
 // services/ai/cache-sharing.ts
 export class CrossDocumentCacheManager {
   private topicClusters = new Map<string, Set<string>>();
   private documentTopics = new Map<string, string>();
+  private retextResultSharing = new Map<string, Set<string>>(); // Track retext result sharing
   
   // Register a document with its topic
   registerDocument(documentId: string, topic: string): void {
@@ -339,7 +444,19 @@ export class CrossDocumentCacheManager {
   }
   
   // Check if a suggestion is shareable across documents
-  isSuggestionShareable(suggestion: UnifiedSuggestion): boolean {
+  isSuggestionShareable(suggestion: UnifiedSuggestion, isRetextResult: boolean): boolean {
+    // Retext results are more shareable since they're rule-based
+    if (isRetextResult) {
+      // All retext spelling and grammar checks are shareable
+      if (['spelling', 'grammar'].includes(suggestion.category)) return true;
+      // Basic style checks from retext are also shareable
+      if (suggestion.category === 'style' && 
+          ['passive-voice', 'weasel-words', 'redundancy'].includes(suggestion.subCategory)) {
+        return true;
+      }
+    }
+    
+    // AI-enhanced suggestions shareability
     // Style and general grammar suggestions are often shareable
     if (suggestion.category === 'style') return true;
     if (suggestion.category === 'grammar' && 
@@ -426,9 +543,16 @@ export class AIProviderManager {
     return this.registry.languageModel(modelId);
   }
   
-  // Estimate task complexity based on suggestion types
+  // Estimate task complexity based on suggestion types (only for AI-needed suggestions)
   estimateComplexity(suggestions: UnifiedSuggestion[]): 'simple' | 'moderate' | 'complex' {
-    const complexityScores = suggestions.map(s => {
+    // Filter out suggestions that retext already handles well
+    const aiNeededSuggestions = suggestions.filter(s => 
+      !this.isHandledByRetext(s) || this.needsAIEnhancement(s)
+    );
+    
+    if (aiNeededSuggestions.length === 0) return 'simple';
+    
+    const complexityScores = aiNeededSuggestions.map(s => {
       // Simple: basic spelling, grammar
       if (['spelling', 'basic-grammar'].includes(s.subCategory)) return 1;
       
@@ -447,6 +571,36 @@ export class AIProviderManager {
     if (avgScore <= 2.5) return 'moderate';
     return 'complex';
   }
+  
+  // Check if suggestion is already well-handled by retext
+  private isHandledByRetext(suggestion: UnifiedSuggestion): boolean {
+    // Retext handles these categories well
+    const retextCategories = [
+      'spelling-basic',
+      'grammar-basic',
+      'passive-voice',
+      'weasel-words',
+      'redundancy',
+      'repeated-words'
+    ];
+    
+    return retextCategories.includes(suggestion.subCategory);
+  }
+  
+  // Check if retext suggestion needs AI enhancement
+  private needsAIEnhancement(suggestion: UnifiedSuggestion): boolean {
+    // These need AI for better context and explanations
+    const needsEnhancement = [
+      'style',
+      'clarity',
+      'tone',
+      'seo-optimization',
+      'complex-grammar'
+    ];
+    
+    return needsEnhancement.includes(suggestion.category) ||
+           needsEnhancement.includes(suggestion.subCategory);
+  }
 }
 
 #### 2.2 Enhanced Token Counter with AI SDK Integration
@@ -455,6 +609,7 @@ export class AIProviderManager {
 import { encoding_for_model } from 'tiktoken';
 
 export class TokenCounter {
+  private aiOnlySuggestions = new Set<string>(); // Track which suggestions need AI
   private encoders = new Map<string, any>();
   
   // Get encoder for specific model
@@ -476,10 +631,21 @@ export class TokenCounter {
     return this.encoders.get(model);
   }
   
-  // Count tokens for a prompt
-  countTokens(text: string, model = 'gpt-4o'): number {
+  // Count tokens for a prompt (only for AI-enhanced suggestions)
+  countTokens(text: string, model = 'gpt-4o', isAIOnly = false): number {
+    if (!isAIOnly) return 0; // Don't count tokens for retext-only suggestions
     const encoder = this.getEncoder(model);
     return encoder.encode(text).length;
+  }
+  
+  // Track suggestions that need AI enhancement
+  markAsAINeeded(suggestionId: string): void {
+    this.aiOnlySuggestions.add(suggestionId);
+  }
+  
+  // Check if suggestion needs AI
+  needsAI(suggestionId: string): boolean {
+    return this.aiOnlySuggestions.has(suggestionId);
   }
   
   // Enhanced cost estimation with actual token usage from AI SDK
@@ -589,7 +755,7 @@ export class TokenCounter {
 }
 ```
 
-#### 2.2 Batch Optimization Service
+#### 2.3 Batch Optimization Service
 ```typescript
 // services/ai/batch-optimizer.ts
 export class BatchOptimizer {
@@ -599,10 +765,17 @@ export class BatchOptimizer {
   // Intelligently batch suggestions to minimize API calls
   optimizeBatches(
     suggestions: UnifiedSuggestion[],
-    context: DocumentContext
+    context: DocumentContext,
+    retextResults: Map<string, any> // Results from client-side retext analysis
   ): UnifiedSuggestion[][] {
+    // Filter out suggestions already handled by retext
+    const aiNeededSuggestions = suggestions.filter(s => {
+      const retextResult = retextResults.get(s.id);
+      // Only send to AI if retext didn't provide a good fix or needs enhancement
+      return !retextResult || this.needsAIEnhancement(s, retextResult);
+    });
     // Sort by priority (errors > warnings > suggestions)
-    const sorted = [...suggestions].sort((a, b) => {
+    const sorted = [...aiNeededSuggestions].sort((a, b) => {
       const priority = { error: 0, warning: 1, suggestion: 2, info: 3 };
       return priority[a.severity] - priority[b.severity];
     });
@@ -628,9 +801,24 @@ export class BatchOptimizer {
       batches.push(currentBatch);
     }
     
-    console.log(`[Batch Optimizer] Created ${batches.length} batches from ${suggestions.length} suggestions`);
+    console.log(`[Batch Optimizer] Created ${batches.length} batches from ${aiNeededSuggestions.length} AI-needed suggestions (filtered from ${suggestions.length} total)`);
     
     return batches;
+  }
+  
+  // Check if suggestion needs AI enhancement beyond retext
+  private needsAIEnhancement(suggestion: UnifiedSuggestion, retextResult: any): boolean {
+    // If retext has no fix, definitely needs AI
+    if (!retextResult.fix) return true;
+    
+    // Complex categories need AI for better context
+    const complexCategories = ['style', 'clarity', 'tone', 'seo'];
+    if (complexCategories.includes(suggestion.category)) return true;
+    
+    // If confidence is low, use AI for improvement
+    if (retextResult.confidence && retextResult.confidence < 0.7) return true;
+    
+    return false;
   }
   
   private getBasePromptTokens(context: DocumentContext): number {
@@ -695,6 +883,17 @@ interface AIPreferences {
     style: boolean;
     seo: boolean;
   };
+  retextSettings: {
+    enabled: boolean;
+    runOnClient: boolean;
+    cacheResults: boolean;
+    rules: {
+      spelling: boolean;
+      grammar: boolean;
+      style: boolean;
+      clarity: boolean;
+    };
+  };
   costSaving: boolean;
   shareCache: boolean;
 }
@@ -709,6 +908,17 @@ export function AIPreferencesSettings({ userId }: { userId: string }) {
       grammar: true,
       style: true,
       seo: true
+    },
+    retextSettings: {
+      enabled: true,
+      runOnClient: true,
+      cacheResults: true,
+      rules: {
+        spelling: true,
+        grammar: true,
+        style: true,
+        clarity: true
+      }
     },
     costSaving: true,
     shareCache: true
@@ -893,6 +1103,99 @@ export function AIPreferencesSettings({ userId }: { userId: string }) {
         </CardContent>
       </Card>
       
+      {/* Retext Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-blue-500" />
+            Retext Analysis Settings
+          </CardTitle>
+          <CardDescription>
+            Configure client-side text analysis with retext
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="retext-enabled">Enable Retext Analysis</Label>
+            <Switch
+              id="retext-enabled"
+              checked={preferences.retextSettings.enabled}
+              onCheckedChange={(checked) => 
+                setPreferences(prev => ({
+                  ...prev,
+                  retextSettings: { ...prev.retextSettings, enabled: checked }
+                }))
+              }
+            />
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="run-client">Run on Client</Label>
+              <p className="text-sm text-muted-foreground">
+                Analyze text locally for faster results
+              </p>
+            </div>
+            <Switch
+              id="run-client"
+              checked={preferences.retextSettings.runOnClient}
+              onCheckedChange={(checked) => 
+                setPreferences(prev => ({
+                  ...prev,
+                  retextSettings: { ...prev.retextSettings, runOnClient: checked }
+                }))
+              }
+              disabled={!preferences.retextSettings.enabled}
+            />
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="cache-retext">Cache Retext Results</Label>
+              <p className="text-sm text-muted-foreground">
+                Store analysis results for performance
+              </p>
+            </div>
+            <Switch
+              id="cache-retext"
+              checked={preferences.retextSettings.cacheResults}
+              onCheckedChange={(checked) => 
+                setPreferences(prev => ({
+                  ...prev,
+                  retextSettings: { ...prev.retextSettings, cacheResults: checked }
+                }))
+              }
+              disabled={!preferences.retextSettings.enabled}
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <Label>Retext Rules</Label>
+            {Object.entries(preferences.retextSettings.rules).map(([rule, enabled]) => (
+              <div key={rule} className="flex items-center justify-between pl-4">
+                <Label htmlFor={`retext-${rule}`} className="capitalize text-sm">
+                  {rule}
+                </Label>
+                <Switch
+                  id={`retext-${rule}`}
+                  checked={enabled}
+                  onCheckedChange={(checked) => 
+                    setPreferences(prev => ({
+                      ...prev,
+                      retextSettings: {
+                        ...prev.retextSettings,
+                        rules: { ...prev.retextSettings.rules, [rule]: checked }
+                      }
+                    }))
+                  }
+                  disabled={!preferences.retextSettings.enabled}
+                />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      
       {/* Cost Optimization */}
       <Card className={!preferences.enabled ? 'opacity-50' : ''}>
         <CardHeader>
@@ -989,6 +1292,17 @@ export async function GET(
           style: true,
           seo: true
         },
+        retextSettings: {
+          enabled: true,
+          runOnClient: true,
+          cacheResults: true,
+          rules: {
+            spelling: true,
+            grammar: true,
+            style: true,
+            clarity: true
+          }
+        },
         costSaving: true,
         shareCache: true
       });
@@ -1064,6 +1378,13 @@ export interface AIPerformanceMetrics {
   errorRate: number;
   errorsByType: Record<string, number>;
   finishReasons: Record<string, number>;
+  retextMetrics: {
+    clientProcessingTime: number[];
+    serverProcessingTime: number[];
+    cacheHitRate: number;
+    suggestionsHandled: number;
+    suggestionsNeedingAI: number;
+  };
 }
 
 export class AIPerformanceMonitor {
@@ -1081,7 +1402,14 @@ export class AIPerformanceMonitor {
     enhancementQuality: { accepted: 0, rejected: 0, modified: 0 },
     errorRate: 0,
     errorsByType: {},
-    finishReasons: {}
+    finishReasons: {},
+    retextMetrics: {
+      clientProcessingTime: [],
+      serverProcessingTime: [],
+      cacheHitRate: 0,
+      suggestionsHandled: 0,
+      suggestionsNeedingAI: 0
+    }
   };
   
   private metricsWindow = 100; // Keep last 100 measurements
@@ -1203,10 +1531,45 @@ export class AIPerformanceMonitor {
     this.metrics.enhancementQuality[action]++;
   }
   
+  // Track retext performance
+  trackRetextPerformance(params: {
+    processingTime: number;
+    location: 'client' | 'server';
+    suggestionsCount: number;
+    aiNeededCount: number;
+    cacheHit: boolean;
+  }): void {
+    const { processingTime, location, suggestionsCount, aiNeededCount, cacheHit } = params;
+    
+    if (location === 'client') {
+      this.metrics.retextMetrics.clientProcessingTime.push(processingTime);
+      if (this.metrics.retextMetrics.clientProcessingTime.length > this.metricsWindow) {
+        this.metrics.retextMetrics.clientProcessingTime.shift();
+      }
+    } else {
+      this.metrics.retextMetrics.serverProcessingTime.push(processingTime);
+      if (this.metrics.retextMetrics.serverProcessingTime.length > this.metricsWindow) {
+        this.metrics.retextMetrics.serverProcessingTime.shift();
+      }
+    }
+    
+    this.metrics.retextMetrics.suggestionsHandled += suggestionsCount;
+    this.metrics.retextMetrics.suggestionsNeedingAI += aiNeededCount;
+    
+    // Update cache hit rate
+    const alpha = 0.1;
+    const hit = cacheHit ? 1 : 0;
+    this.metrics.retextMetrics.cacheHitRate = 
+      alpha * hit + (1 - alpha) * this.metrics.retextMetrics.cacheHitRate;
+  }
+  
   // Get current metrics
   getMetrics(): AIPerformanceMetrics & {
     avgLatency: number;
     acceptanceRate: number;
+    avgRetextClientTime: number;
+    avgRetextServerTime: number;
+    retextVsAIRatio: number;
   } {
     const avgLatency = this.metrics.apiLatency.length > 0
       ? this.metrics.apiLatency.reduce((a, b) => a + b, 0) / this.metrics.apiLatency.length
@@ -1221,10 +1584,28 @@ export class AIPerformanceMonitor {
       ? this.metrics.enhancementQuality.accepted / totalFeedback
       : 0;
     
+    const avgRetextClientTime = this.metrics.retextMetrics.clientProcessingTime.length > 0
+      ? this.metrics.retextMetrics.clientProcessingTime.reduce((a, b) => a + b, 0) / 
+        this.metrics.retextMetrics.clientProcessingTime.length
+      : 0;
+    
+    const avgRetextServerTime = this.metrics.retextMetrics.serverProcessingTime.length > 0
+      ? this.metrics.retextMetrics.serverProcessingTime.reduce((a, b) => a + b, 0) / 
+        this.metrics.retextMetrics.serverProcessingTime.length
+      : 0;
+    
+    const retextVsAIRatio = this.metrics.retextMetrics.suggestionsHandled > 0
+      ? (this.metrics.retextMetrics.suggestionsHandled - this.metrics.retextMetrics.suggestionsNeedingAI) / 
+        this.metrics.retextMetrics.suggestionsHandled
+      : 0;
+    
     return {
       ...this.metrics,
       avgLatency,
-      acceptanceRate
+      acceptanceRate,
+      avgRetextClientTime,
+      avgRetextServerTime,
+      retextVsAIRatio
     };
   }
   
@@ -1233,10 +1614,20 @@ export class AIPerformanceMonitor {
     this.metrics = {
       apiLatency: [],
       cacheHitRate: 0,
-      tokenUsage: { prompt: 0, completion: 0, total: 0 },
+      tokenUsage: { prompt: 0, completion: 0, total: 0, byModel: {} },
       costEstimate: 0,
+      costByModel: {},
       enhancementQuality: { accepted: 0, rejected: 0, modified: 0 },
-      errorRate: 0
+      errorRate: 0,
+      errorsByType: {},
+      finishReasons: {},
+      retextMetrics: {
+        clientProcessingTime: [],
+        serverProcessingTime: [],
+        cacheHitRate: 0,
+        suggestionsHandled: 0,
+        suggestionsNeedingAI: 0
+      }
     };
   }
   
@@ -1299,7 +1690,7 @@ export function AIMonitoringDashboard() {
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -1367,6 +1758,23 @@ export function AIMonitoringDashboard() {
             </p>
           </CardContent>
         </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Retext vs AI
+            </CardTitle>
+            <Zap className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {Math.round(metrics.retextVsAIRatio * 100)}%
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Handled by retext alone
+            </p>
+          </CardContent>
+        </Card>
       </div>
       
       {/* Latency Chart */}
@@ -1386,6 +1794,43 @@ export function AIMonitoringDashboard() {
                 dataKey="latency" 
                 stroke="#8884d8" 
                 strokeWidth={2}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+      
+      {/* Retext Performance */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Retext Analysis Performance</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={[
+              ...metrics.retextMetrics.clientProcessingTime.map((time, i) => ({
+                index: i,
+                client: time,
+                server: metrics.retextMetrics.serverProcessingTime[i] || null
+              }))
+            ]}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="index" />
+              <YAxis />
+              <Tooltip />
+              <Line 
+                type="monotone" 
+                dataKey="client" 
+                stroke="#3b82f6" 
+                strokeWidth={2}
+                name="Client"
+              />
+              <Line 
+                type="monotone" 
+                dataKey="server" 
+                stroke="#10b981" 
+                strokeWidth={2}
+                name="Server"
               />
             </LineChart>
           </ResponsiveContainer>
@@ -1486,13 +1931,15 @@ describe('Batch Optimization', () => {
 
 ## Success Metrics
 
-- [ ] Cache hit rate > 80% for typical usage
-- [ ] API costs reduced by 60%+ through optimization
-- [ ] Average API latency < 500ms
+- [ ] Cache hit rate > 80% for typical usage (both retext and AI)
+- [ ] API costs reduced by 70%+ through retext filtering and optimization
+- [ ] Average API latency < 500ms for AI calls
+- [ ] Client-side retext processing < 100ms for typical documents
+- [ ] Retext handles 60%+ of suggestions without AI
 - [ ] User preferences UI intuitive and responsive
-- [ ] Monitoring dashboard provides actionable insights
-- [ ] Memory usage stays under 100MB
-- [ ] Cross-document cache sharing working effectively
+- [ ] Monitoring dashboard tracks both retext and AI performance
+- [ ] Memory usage stays under 100MB including retext caches
+- [ ] Cross-document cache sharing working for both analysis types
 
 ## Dependencies
 
@@ -1504,16 +1951,19 @@ describe('Batch Optimization', () => {
 
 ## Implementation Order
 
-1. **Day 1**: Advanced caching system
-2. **Day 2**: Cost optimization and batching
-3. **Day 3**: User preferences UI
-4. **Day 4**: Performance monitoring
+1. **Day 1**: Advanced caching system with retext/AI separation
+2. **Day 2**: Cost optimization with retext filtering and batching
+3. **Day 3**: User preferences UI with retext settings
+4. **Day 4**: Performance monitoring for both systems
 5. **Day 5**: Integration testing and polish
 
 ## Notes
 
-- Monitor memory usage closely with advanced caching
+- Monitor memory usage closely with separate retext and AI caches
+- Client-side retext performance is critical for user experience
 - Consider rate limiting for admin monitoring endpoints
-- Plan for cache warming strategies
-- Document cost optimization best practices
-- Consider adding export functionality for metrics 
+- Plan for cache warming strategies for both analysis types
+- Document cost optimization through retext pre-filtering
+- Track client vs server performance to optimize deployment
+- Consider adding export functionality for metrics
+- Ensure retext cache persistence across sessions 

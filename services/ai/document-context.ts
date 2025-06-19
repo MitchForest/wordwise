@@ -14,6 +14,7 @@ export interface DocumentContext {
   detectedTopic?: string;
   detectedTone?: string;
   targetKeyword?: string;
+  metaDescription?: string;
   surroundingParagraphs?: Map<string, string>; // suggestionId -> paragraph
 }
 

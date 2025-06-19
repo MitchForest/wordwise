@@ -135,6 +135,20 @@ export class AnalysisCache {
     return null;
   }
   
+  // Async version of set that ensures persistence
+  async setAsync<T>(key: string, data: T, ttlSeconds?: number): Promise<void> {
+    // Use regular set which handles memory cache
+    this.set(key, data, ttlSeconds);
+    
+    // Ensure it's persisted to IndexedDB
+    if (this.dbReady) {
+      const entry = this.memoryCache.get(key);
+      if (entry) {
+        await this.persistToIndexedDB(key, entry);
+      }
+    }
+  }
+  
   clear(): void {
     this.memoryCache.clear();
     if (this.dbReady) {

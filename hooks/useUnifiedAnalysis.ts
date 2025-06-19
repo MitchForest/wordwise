@@ -14,8 +14,9 @@ import { useSuggestions } from '@/contexts/SuggestionContext';
 import { Node } from '@tiptap/pm/model';
 import { toast } from 'sonner';
 import { EnhancedSuggestion, UnifiedSuggestion } from '@/types/suggestions';
+import { analysisCache } from '@/services/analysis/cache';
 
-const AI_ENHANCEMENT_DELAY = 2000; // 2 seconds after user stops typing
+const AI_ENHANCEMENT_DELAY = 1000; // Reduced from 2000ms to 1000ms
 
 export const useUnifiedAnalysis = (
   doc: Node | null,
@@ -25,11 +26,14 @@ export const useUnifiedAnalysis = (
     metaDescription: string;
     targetKeyword: string;
     keywords: string[];
-  }
+  },
+  documentId?: string,
+  enableSEOChecks: boolean = false
 ) => {
   const { setMetrics, updateSuggestions, suggestions } = useSuggestions();
   const [enhancementState, setEnhancementState] = useState<'idle' | 'enhancing' | 'enhanced'>('idle');
   const [enhancedSuggestions, setEnhancedSuggestions] = useState<Map<string, EnhancedSuggestion>>(new Map());
+  const enhancedSuggestionIds = useRef<Set<string>>(new Set());
   const aiEnhancementTimer = useRef<NodeJS.Timeout | null>(null);
   const lastEnhancedDocHash = useRef<string>('');
 
@@ -61,20 +65,36 @@ export const useUnifiedAnalysis = (
   const debouncedDeepAnalysis = useDebouncedCallback(async (currentDoc, metadata) => {
     if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 5) {
       setMetrics(null);
-      // Also clear out any existing deep suggestions
-      updateSuggestions(['seo', 'readability'], []);
+      // Only clear SEO suggestions if SEO checks are enabled
+      if (enableSEOChecks) {
+        updateSuggestions(['seo'], []);
+      }
       return;
     }
     try {
       const response = await fetch('/api/analysis/deep', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ doc: currentDoc.toJSON(), documentMetadata: metadata }),
+        body: JSON.stringify({ 
+          doc: currentDoc.toJSON(), 
+          documentMetadata: metadata,
+          enableSEOChecks // Pass flag to API
+        }),
       });
       if (!response.ok) throw new Error(`Deep analysis request failed: ${response.status}`);
       const { suggestions, metrics } = await response.json();
       setMetrics(metrics || null);
-      updateSuggestions(['seo', 'readability'], suggestions || []);
+      
+      // Only update SEO suggestions if enabled
+      if (enableSEOChecks) {
+        updateSuggestions(['seo', 'readability'], suggestions || []);
+      } else {
+        // Only update non-SEO suggestions
+        const nonSEOSuggestions = (suggestions || []).filter((s: UnifiedSuggestion) => 
+          s.category !== 'seo'
+        );
+        updateSuggestions(['spelling', 'grammar', 'style'], nonSEOSuggestions);
+      }
     } catch (error) {
       console.error('Failed to fetch deep analysis:', error);
       toast.error('Deep analysis service is unavailable.');
@@ -129,44 +149,62 @@ export const useUnifiedAnalysis = (
     }
   }, 400);
 
-  // Tier 4: AI Enhancement - 2 second debounce
-  const debouncedAIEnhancement = useDebouncedCallback(async (currentDoc, currentSuggestions) => {
-    if (!isReady || !currentDoc || currentSuggestions.length === 0) {
-      console.log('[AI Enhancement] Skipping - no suggestions to enhance');
-      return;
-    }
-
-    // Check if document has changed significantly since last enhancement
-    const currentHash = getDocHash(currentDoc);
-    if (currentHash === lastEnhancedDocHash.current && enhancementState === 'enhanced') {
-      console.log('[AI Enhancement] Skipping - document unchanged since last enhancement');
-      return;
-    }
-
-    console.log('[AI Enhancement] Starting enhancement after 2s delay', {
-      suggestionCount: currentSuggestions.length,
-      categories: [...new Set(currentSuggestions.map((s: UnifiedSuggestion) => s.category))],
-      documentLength: currentDoc.textContent.length
-    });
-    setEnhancementState('enhancing');
+  // Restore enhanced suggestions from cache on mount
+  useEffect(() => {
+    const restoreEnhancedSuggestions = async () => {
+      if (!documentId) return;
+      
+      const enhancedCacheKey = `enhanced-suggestions-${documentId}`;
+      const cached = await analysisCache.getAsync<EnhancedSuggestion[]>(enhancedCacheKey);
+      
+      if (cached && cached.length > 0) {
+        console.log('[AI Enhancement] Restored enhanced suggestions from cache:', cached.length);
+        
+        // Restore enhanced suggestions map
+        const restoredMap = new Map<string, EnhancedSuggestion>();
+        cached.forEach(s => {
+          restoredMap.set(s.id, s);
+          enhancedSuggestionIds.current.add(s.id);
+        });
+        
+        setEnhancedSuggestions(restoredMap);
+        setEnhancementState('enhanced');
+      }
+    };
     
-    // Update suggestions to show enhancing state
-    const enhancingSuggestions = currentSuggestions.map((s: UnifiedSuggestion) => ({ 
-      ...s, 
-      isEnhancing: true 
-    } as EnhancedSuggestion));
-    updateSuggestions(['spelling', 'grammar', 'style', 'seo'], enhancingSuggestions);
+    restoreEnhancedSuggestions();
+  }, [documentId]);
+
+  // Immediate AI Enhancement for new suggestions
+  const enhanceNewSuggestions = useCallback(async (currentDoc: Node, allSuggestions: UnifiedSuggestion[]) => {
+    // Filter out suggestions that have already been enhanced
+    const newSuggestions = allSuggestions.filter(s => !enhancedSuggestionIds.current.has(s.id));
+    
+    if (newSuggestions.length === 0) {
+      console.log('[AI Enhancement] No new suggestions to enhance');
+      return;
+    }
+
+    console.log('[AI Enhancement] Enhancing new suggestions immediately:', {
+      newCount: newSuggestions.length,
+      newIds: newSuggestions.map(s => s.id)
+    });
+
+    // Mark these as being enhanced
+    newSuggestions.forEach(s => enhancedSuggestionIds.current.add(s.id));
     
     try {
       const response = await fetch('/api/analysis/ai-enhance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          suggestions: currentSuggestions,
+          suggestions: newSuggestions,
           doc: currentDoc.toJSON(),
           metadata: {
             title: documentMetadata.title,
-            targetKeyword: documentMetadata.targetKeyword
+            targetKeyword: documentMetadata.targetKeyword,
+            metaDescription: documentMetadata.metaDescription,
+            keywords: documentMetadata.keywords
           }
         })
       });
@@ -174,52 +212,75 @@ export const useUnifiedAnalysis = (
       if (response.ok) {
         const { enhanced } = await response.json();
         
-        console.log('[AI Enhancement] Received enhanced suggestions:', {
+        console.log('[AI Enhancement] Enhanced new suggestions:', {
           total: enhanced.length,
-          withAIFixes: enhanced.filter((s: EnhancedSuggestion) => s.aiFix).length,
-          highConfidence: enhanced.filter((s: EnhancedSuggestion) => (s.aiConfidence || 0) > 0.8).length
+          withAIFixes: enhanced.filter((s: EnhancedSuggestion) => s.aiFix).length
         });
         
-        // Create map of enhanced suggestions
-        const enhancedMap = new Map<string, EnhancedSuggestion>(
-          enhanced.map((s: EnhancedSuggestion) => [s.id, s])
-        );
+        // Merge with existing enhanced suggestions
+        const newEnhancedMap = new Map(enhancedSuggestions);
+        enhanced.forEach((s: EnhancedSuggestion) => {
+          newEnhancedMap.set(s.id, s);
+        });
         
-        setEnhancedSuggestions(enhancedMap);
+        setEnhancedSuggestions(newEnhancedMap);
         
-        // Update suggestions with enhancements (remove enhancing state)
-        const finalEnhanced = enhanced.map((s: EnhancedSuggestion) => ({ 
-          ...s, 
-          isEnhancing: false 
-        }));
+        // Persist to cache if documentId is available
+        if (documentId) {
+          const enhancedCacheKey = `enhanced-suggestions-${documentId}`;
+          const allEnhanced = Array.from(newEnhancedMap.values());
+          await analysisCache.setAsync(enhancedCacheKey, allEnhanced, 3600); // 1 hour TTL
+          console.log('[AI Enhancement] Persisted enhanced suggestions to cache');
+        }
         
-        updateSuggestions(['spelling', 'grammar', 'style', 'seo'], finalEnhanced);
-        setEnhancementState('enhanced');
-        lastEnhancedDocHash.current = currentHash;
-      } else if (response.status === 429) {
-        console.log('[AI Enhancement] Daily limit reached');
-        toast.error('Daily AI enhancement limit reached');
-        setEnhancementState('idle');
+        // Update only the new suggestions in the UI
+        const updatedSuggestions = allSuggestions.map(s => {
+          const enhanced = newEnhancedMap.get(s.id);
+          return enhanced || s;
+        });
         
-        // Remove enhancing state
-        const normalSuggestions = currentSuggestions.map((s: UnifiedSuggestion) => ({ 
-          ...s, 
-          isEnhancing: false 
-        }));
-        updateSuggestions(['spelling', 'grammar', 'style', 'seo'], normalSuggestions);
+        updateSuggestions(['spelling', 'grammar', 'style', 'seo'], updatedSuggestions);
       }
     } catch (error) {
-      console.error('[AI Enhancement] Error:', error);
-      setEnhancementState('idle');
-      
-      // Remove enhancing state on error
-      const normalSuggestions = currentSuggestions.map((s: UnifiedSuggestion) => ({ 
-        ...s, 
-        isEnhancing: false 
-      }));
-      updateSuggestions(['spelling', 'grammar', 'style', 'seo'], normalSuggestions);
+      console.error('[AI Enhancement] Error enhancing new suggestions:', error);
+      // Remove failed IDs so they can be retried
+      newSuggestions.forEach(s => enhancedSuggestionIds.current.delete(s.id));
     }
-  }, AI_ENHANCEMENT_DELAY);
+  }, [enhancedSuggestions, updateSuggestions, documentMetadata, documentId]);
+
+  // Delayed AI Enhancement for finding additional errors
+  const debouncedAdditionalErrorDetection = useDebouncedCallback(async (currentDoc) => {
+    if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 10) {
+      return;
+    }
+
+    console.log('[AI Enhancement] Looking for additional errors missed by local checkers');
+    
+    try {
+      // This will be a new endpoint that uses AI to find errors not caught by local analysis
+      const response = await fetch('/api/analysis/ai-detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doc: currentDoc.toJSON(),
+          metadata: documentMetadata,
+          existingSuggestionIds: Array.from(enhancedSuggestionIds.current)
+        })
+      });
+      
+      if (response.ok) {
+        const { additionalSuggestions } = await response.json();
+        if (additionalSuggestions && additionalSuggestions.length > 0) {
+          console.log('[AI Enhancement] Found additional errors:', additionalSuggestions.length);
+          // Merge with existing suggestions instead of using 'ai' category
+          const currentSuggestions = [...suggestions, ...additionalSuggestions];
+          updateSuggestions(['spelling', 'grammar', 'style', 'seo'], currentSuggestions);
+        }
+      }
+    } catch (error) {
+      console.error('[AI Enhancement] Error detecting additional errors:', error);
+    }
+  }, 3000); // 3 second delay for additional error detection
 
   // Tier 0: Real-time Spell Check (as user types)
   const runRealtimeSpellCheck = useCallback(async (word: string, currentDoc: Node) => {
@@ -242,39 +303,58 @@ export const useUnifiedAnalysis = (
     }
   }, [updateSuggestions]);
 
+  // Manual SEO analysis trigger
+  const runSEOAnalysis = useCallback(() => {
+    if (doc && isReady) {
+      console.log('[SEO Analysis] Manual trigger');
+      debouncedDeepAnalysis(doc, documentMetadata);
+    }
+  }, [doc, isReady, documentMetadata, debouncedDeepAnalysis]);
+
+  // Watch for new suggestions and enhance them immediately
+  useEffect(() => {
+    if (!doc || !isReady || suggestions.length === 0) {
+      return;
+    }
+
+    // Enhance new suggestions immediately
+    enhanceNewSuggestions(doc, suggestions);
+  }, [suggestions, doc, isReady, enhanceNewSuggestions]);
+
+  // Trigger additional error detection on document changes
+  useEffect(() => {
+    if (!doc || !isReady) {
+      return;
+    }
+
+    debouncedAdditionalErrorDetection(doc);
+  }, [doc, isReady, debouncedAdditionalErrorDetection]);
+
+  // Clean up enhanced IDs when suggestions are removed
+  useEffect(() => {
+    const currentSuggestionIds = new Set(suggestions.map(s => s.id));
+    const enhancedIds = Array.from(enhancedSuggestionIds.current);
+    
+    enhancedIds.forEach(id => {
+      if (!currentSuggestionIds.has(id)) {
+        enhancedSuggestionIds.current.delete(id);
+      }
+    });
+  }, [suggestions]);
+
   // Main effect to orchestrate all checks
   useEffect(() => {
-    debouncedDeepAnalysis(doc, documentMetadata);
+    if (enableSEOChecks) {
+      debouncedDeepAnalysis(doc, documentMetadata);
+    }
     debouncedFastAnalysis(doc);
-  }, [doc, JSON.stringify(documentMetadata), debouncedDeepAnalysis, debouncedFastAnalysis]);
-
-  // AI Enhancement effect - triggered after suggestions change
-  useEffect(() => {
-    if (!doc || suggestions.length === 0) {
-      if (aiEnhancementTimer.current) {
-        clearTimeout(aiEnhancementTimer.current);
-      }
-      return;
-    }
-
-    // Clear existing timer
-    if (aiEnhancementTimer.current) {
-      clearTimeout(aiEnhancementTimer.current);
-    }
-
-    // Don't enhance if we're already enhancing
-    if (enhancementState === 'enhancing') {
-      return;
-    }
-
-    // Trigger AI enhancement
-    debouncedAIEnhancement(doc, suggestions);
-  }, [doc, suggestions, debouncedAIEnhancement, enhancementState]);
+  }, [doc, JSON.stringify(documentMetadata), debouncedDeepAnalysis, debouncedFastAnalysis, enableSEOChecks]);
 
   // We return the real-time checker so it can be called by the editor
   return { 
     runRealtimeSpellCheck, 
     debouncedFastAnalysis,
+    runSEOAnalysis,
     enhancementState,
     enhancedSuggestions
   };

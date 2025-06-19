@@ -20,6 +20,7 @@ import { motion } from 'framer-motion';
 import { useUnifiedAnalysis } from '@/hooks/useUnifiedAnalysis';
 import { useSuggestions } from '@/contexts/SuggestionContext';
 import type { UnifiedSuggestion } from '@/types/suggestions';
+import { toast } from 'sonner';
 
 // --- Tiptap Core Extensions ---
 import { StarterKit } from '@tiptap/starter-kit';
@@ -114,6 +115,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [isSEOModalOpen, setIsSEOModalOpen] = useState(false);
+  const [enableSEOChecks, setEnableSEOChecks] = useState(false);
   
   // Create suggestion manager instance
   const suggestionManager = useRef(new SuggestionManager());
@@ -173,6 +175,22 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
         apply: (suggestionId: string, value: string) => {
           console.log('[Apply Fix] Starting:', { suggestionId, value });
           
+          // Special handling for document-wide suggestions
+          if (suggestionId.endsWith('-global')) {
+            console.log('[Apply Fix] Document-wide suggestion - no position needed');
+            
+            // Handle based on suggestion type
+            if (suggestionId.includes('seo')) {
+              // Open SEO modal for SEO-related suggestions
+              setIsSEOModalOpen(true);
+              toast.info('Please update your SEO settings');
+            } else {
+              // Show toast for other document-wide suggestions
+              toast.info(value || 'Please review this document-wide suggestion');
+            }
+            return;
+          }
+          
           // Get position from SuggestionManager
           const position = suggestionManager.current.getPosition(suggestionId);
           
@@ -210,17 +228,23 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
         },
       });
     }
-  }, [editor, registerEditorActions]); // Removed getSuggestions from deps
+  }, [editor, registerEditorActions, setIsSEOModalOpen]); // Added setIsSEOModalOpen to deps
 
   const { saveState, lastSaved, handleContentChange, handleTitleChange, handleMetaChange } = useAutoSave(editor, documentId);
 
   // Call our new analysis hook
-  const { runRealtimeSpellCheck, debouncedFastAnalysis } = useUnifiedAnalysis(editor?.state.doc || null, editor?.isEditable || false, {
-    title,
-    metaDescription,
-    targetKeyword,
-    keywords,
-  });
+  const { runRealtimeSpellCheck, debouncedFastAnalysis, runSEOAnalysis } = useUnifiedAnalysis(
+    editor?.state.doc || null, 
+    editor?.isEditable || false, 
+    {
+      title,
+      metaDescription,
+      targetKeyword,
+      keywords,
+    },
+    documentId,
+    enableSEOChecks
+  );
 
   // Update SuggestionManager when suggestions change
   useEffect(() => {
@@ -348,6 +372,14 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
     setIsPublishingDialogOpen(true);
   };
 
+  const handleCheckSEO = () => {
+    setEnableSEOChecks(true);
+    // Trigger immediate SEO analysis
+    if (runSEOAnalysis) {
+      runSEOAnalysis();
+    }
+  };
+
   if (!editor) {
     return <div>Loading editor...</div>;
   }
@@ -417,7 +449,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
           </AnimatePresence>
         </div>
 
-        <EditorStatusBar />
+        <EditorStatusBar onCheckSEO={handleCheckSEO} />
       </motion.div>
 
       {/* Right panel */}

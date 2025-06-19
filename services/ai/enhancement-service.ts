@@ -29,6 +29,53 @@ export class AIEnhancementService {
   private model = openai('gpt-4o');
   
   /**
+   * @purpose Determine if a suggestion needs AI enhancement
+   * @param suggestion - The suggestion to evaluate
+   * @returns true if enhancement would be beneficial
+   */
+  private shouldEnhance(suggestion: UnifiedSuggestion): boolean {
+    // Skip if already enhanced
+    if ('aiEnhanced' in suggestion && suggestion.aiEnhanced) {
+      return false;
+    }
+    
+    // Document-wide suggestions don't need enhancement
+    if (suggestion.id.endsWith('-global')) {
+      return false;
+    }
+    
+    // Always enhance SEO suggestions - they often need better fixes
+    if (suggestion.category === 'seo') {
+      return true;
+    }
+    
+    // Style suggestions often lack fixes - always enhance
+    if (suggestion.category === 'style') {
+      return true;
+    }
+    
+    // Enhance if no fix available
+    if (!suggestion.actions || suggestion.actions.length === 0) {
+      return true;
+    }
+    
+    // Enhance spelling for context (their/there/they're)
+    if (suggestion.category === 'spelling' && suggestion.matchText) {
+      const contextualWords = ['their', 'there', 'theyre', 'its', 'your', 'youre', 'to', 'too', 'two'];
+      if (contextualWords.some(word => suggestion.matchText?.toLowerCase().includes(word))) {
+        return true;
+      }
+    }
+    
+    // Skip grammar suggestions that already have clear fixes
+    if (suggestion.category === 'grammar' && suggestion.actions.length > 0) {
+      return false;
+    }
+    
+    return false;
+  }
+  
+  /**
    * @purpose Enhance all suggestions with AI-powered improvements
    * @param suggestions - Array of suggestions to enhance
    * @param documentContext - Context about the document
@@ -38,21 +85,47 @@ export class AIEnhancementService {
     suggestions: UnifiedSuggestion[],
     documentContext: DocumentContext
   ): Promise<EnhancedSuggestion[]> {
+    // FILTER: Determine which suggestions need enhancement
+    const toEnhance = suggestions.filter(s => this.shouldEnhance(s));
+    const noEnhancement = suggestions.filter(s => !this.shouldEnhance(s));
+    
+    console.log('[AI Enhancement] Selective enhancement:', {
+      total: suggestions.length,
+      toEnhance: toEnhance.length,
+      skipping: noEnhancement.length
+    });
+    
+    if (toEnhance.length === 0) {
+      // Return all suggestions unchanged
+      return suggestions.map(s => ({ ...s, aiEnhanced: false } as EnhancedSuggestion));
+    }
+    
     // CHECK CACHE: Look for cached enhancements first
-    const cacheKey = this.generateCacheKey(suggestions, documentContext);
+    const cacheKey = this.generateCacheKey(toEnhance, documentContext);
     const cached = await analysisCache.getAsync<EnhancedSuggestion[]>(cacheKey);
     if (cached) {
       console.log('[AI Enhancement] Cache hit');
-      return cached;
+      // Combine cached enhanced suggestions with non-enhanced ones
+      const cachedMap = new Map(cached.map(s => [s.id, s]));
+      return suggestions.map(s => {
+        const cachedVersion = cachedMap.get(s.id);
+        return cachedVersion || { ...s, aiEnhanced: false } as EnhancedSuggestion;
+      });
     }
     
-    // ENHANCE: Batch enhance all suggestions in one API call
-    const enhanced = await this.batchEnhance(suggestions, documentContext);
+    // ENHANCE: Only enhance suggestions that need it
+    const enhanced = await this.batchEnhance(toEnhance, documentContext);
     
     // CACHE: Store results for 1 hour (AI enhancements are expensive)
     analysisCache.set(cacheKey, enhanced, 3600);
     
-    return enhanced;
+    // COMBINE: Merge enhanced and non-enhanced suggestions
+    const enhancedMap = new Map(enhanced.map(s => [s.id, s]));
+    
+    return suggestions.map(s => {
+      const enhancedVersion = enhancedMap.get(s.id);
+      return enhancedVersion || { ...s, aiEnhanced: false } as EnhancedSuggestion;
+    });
   }
   
   /**
@@ -117,6 +190,7 @@ Document Context:
 - Topic: ${context.detectedTopic || 'General'}
 - Tone: ${context.detectedTone || 'Neutral'}
 - Target Keyword: ${context.targetKeyword || 'None specified'}
+- Meta Description: ${context.metaDescription || 'Not set'}
 - First paragraph: ${context.firstParagraph}
 
 For each suggestion:
@@ -126,6 +200,23 @@ For each suggestion:
 4. Rate your confidence (0-1) in the enhancement
 5. Explain your reasoning briefly (max 20 words)
 
+CRITICAL STYLE RULES:
+- For passive voice: ALWAYS restructure to active voice (e.g., "was written by" → "wrote")
+- For weasel words: REMOVE them entirely or replace with specific facts
+- For wordiness: Simplify and make concise
+- For complex sentences: Break into shorter, clearer sentences
+
+Examples:
+- Passive: "The report was completed by the team" → "The team completed the report"
+- Weasel: "Some experts believe" → "Dr. Smith's research shows" OR remove entirely
+- Wordy: "due to the fact that" → "because"
+
+For SEO suggestions specifically:
+- If missing target keyword, suggest one based on the content
+- Ensure keyword appears naturally in title, meta description, and H1
+- Provide specific text improvements, not just advice
+- Consider search intent and user value
+
 Suggestions to enhance:
 ${suggestions.map(s => `
 ID: ${s.id}
@@ -134,6 +225,7 @@ Error text: "${s.matchText || s.context.text}"
 Issue: ${s.message}
 Current fixes: ${s.actions.filter(a => a.type === 'fix').map(a => `"${a.value}"`).join(', ') || 'none'}
 Context: "${s.context.before || ''}[${s.matchText || s.context.text}]${s.context.after || ''}"
+${s.category === 'seo' ? `SEO Type: ${s.id.includes('title') ? 'Title' : s.id.includes('meta') ? 'Meta Description' : 'Content'}` : ''}
 `).join('\n')}
 
 Focus on:
@@ -141,7 +233,9 @@ Focus on:
 - Clarity and conciseness
 - Maintaining document tone (${context.detectedTone})
 - Fixing the actual issue described
-- Providing actionable alternatives when possible`;
+- Providing actionable alternatives when possible
+- For SEO: specific keyword-optimized rewrites
+- For style: MUST fix the underlying issue (passive→active, remove weasels, etc.)`;
   }
   
   /**

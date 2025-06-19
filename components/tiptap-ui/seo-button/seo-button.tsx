@@ -1,6 +1,5 @@
 'use client';
 
-import { Search } from 'lucide-react';
 import { Button } from '@/components/tiptap-ui-primitive/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/tiptap-ui-primitive/tooltip';
 
@@ -14,13 +13,13 @@ export function SEOButton({ onClick }: SEOButtonProps) {
       <TooltipTrigger asChild>
         <Button
           onClick={onClick}
-          className="text-primary hover:bg-primary/10"
+          className="text-primary hover:bg-primary/10 px-3 py-1 rounded-full bg-primary/5 font-medium text-sm"
         >
-          <Search className="h-4 w-4" />
+          SEO
         </Button>
       </TooltipTrigger>
       <TooltipContent>
-        SEO Settings
+        SEO Settings - Keywords, Meta Description
       </TooltipContent>
     </Tooltip>
   );
