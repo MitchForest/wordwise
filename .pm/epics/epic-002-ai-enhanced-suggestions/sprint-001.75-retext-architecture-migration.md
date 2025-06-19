@@ -50,11 +50,11 @@ SEO Analysis (Document-wide)        → SEO Suggestions
 - [x] Create Retext Processor Service with Progressive Loading
 - [x] Create Message to Suggestion Converter with Stable IDs
 - [x] Create Client-Side Analysis Hook with Position Tracking
-- [ ] Clean up old spellcheck service references
+- [x] Clean up old spellcheck service references
 
 #### Day 2: Integration & Deduplication
-- [ ] Create Enhanced Suggestion Deduplication Service
-- [ ] Update useUnifiedAnalysis Hook with Smart AI Queue
+- [x] Create Enhanced Suggestion Deduplication Service
+- [x] Update useUnifiedAnalysis Hook with Smart AI Queue
 - [ ] Update SuggestionContext with Reconciliation Window
 - [ ] Remove old fast analysis API references
 

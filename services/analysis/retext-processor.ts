@@ -26,23 +26,18 @@ export class RetextProcessor {
     try {
       // Core plugins loaded immediately
       const [
-        { default: retextSpell },
         { default: retextRepeatedWords },
         { default: retextSentenceSpacing },
-        { default: retextIndefiniteArticle },
-        { default: dictionary }
+        { default: retextIndefiniteArticle }
       ] = await Promise.all([
-        import('retext-spell'),
         import('retext-repeated-words'),
         import('retext-sentence-spacing'),
-        import('retext-indefinite-article'),
-        import('dictionary-en')
+        import('retext-indefinite-article')
       ]);
       
-      // Instant checks (0ms)
+      // Instant checks (0ms) - temporarily skip spell checking
       this.spellProcessor = unified()
         .use(retextEnglish)
-        .use(retextSpell, dictionary)
         .use(retextRepeatedWords)
         .use(retextSentenceSpacing)
         .use(retextIndefiniteArticle);

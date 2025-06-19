@@ -3,298 +3,630 @@
 ## 1. Vision & Architecture
 
 ### Guiding Principles
-The WordWise assistant is architected around four core principles that ensure a seamless and intelligent user experience:
+The WordWise assistant is architected around five core principles that ensure a seamless and intelligent user experience:
 
-1.  **Responsiveness over Raw Power:** The perceived performance of the assistant is paramount. Our architecture prioritizes delivering the right feedback at the right time. We achieve this through a sophisticated event-driven system that runs different analyses based on specific user actions.
-2.  **Clarity and User Agency:** The assistant's feedback must be clear, actionable, and understandable. The user should always feel in control, with the system acting as an intelligent partner, not an intrusive critic.
-3.  **Server-Side Intelligence, Client-Side Agility:** To provide deep analysis without compromising client-side performance, the heavy lifting is done on the server. The client is a lightweight "sensor" that sends context to our powerful server-side engine for deep analysis, while handling instantaneous tasks like word count locally.
-4.  **Incremental over Monolithic:** We analyze only what changed, not the entire document. This principle drives our performance and enables cost-effective AI integration.
+1. **Instant Feedback, Progressive Enhancement:** Users expect immediate feedback like Google Docs. We deliver this through client-side retext analysis for basic checks, with server-side AI enhancement for complex insights.
+2. **Clarity and User Agency:** The assistant's feedback must be clear, actionable, and understandable. The user should always feel in control, with the system acting as an intelligent partner, not an intrusive critic.
+3. **Hybrid Intelligence:** Client-side retext provides zero-latency basic analysis, while server-side AI adds contextual understanding. Each technology is used where it excels.
+4. **Incremental over Monolithic:** We analyze only what changed, not the entire document. This principle drives our performance and enables cost-effective AI integration.
+5. **Position-Independent Stability:** Suggestions survive document edits through intelligent position tracking, providing a stable and predictable user experience.
 
-### System Architecture: Event-Driven Analysis
-Our architecture is a **server-side, event-driven, context-aware system**. The client-side editor detects specific user actions and triggers one of four distinct analysis events. This model avoids a slow, monolithic analysis and ensures the user receives the most relevant feedback with the appropriate urgency.
+### System Architecture: Hybrid Client-Server Analysis
+Our architecture is a **hybrid client-server system** that combines the speed of client-side analysis with the power of server-side AI. The system delivers instant feedback through local retext processing while progressively enhancing suggestions with AI when beneficial.
 
 ```mermaid
 graph TD
     subgraph Client-Side (Browser)
-        A[User Action in Editor] -- Triggers --> B{useUnifiedAnalysis Hook};
-        B -- on every keystroke --> B1[Live Client Metrics];
-        B -- on word boundary --> B2[API Call: Real-time Spell Check];
-        B -- on 400ms idle --> B3[API Call: Fast Analysis Bundle];
-        B -- on 800ms idle --> B4[API Call: Deep Analysis Bundle];
-
-        subgraph State Management & UI
-          C{SuggestionContext};
-          D[UI Components <br/>(Underlines, Panels, Status Bar)];
+        A[User Action in Editor] --> B{useUnifiedAnalysis Hook}
+        
+        subgraph Retext Analysis (Instant)
+            R1[Retext Processor]
+            R2[Spell Check - nspell]
+            R3[Grammar - retext-plugins]
+            R4[Style - retext-plugins]
+            R1 --> R2 & R3 & R4
         end
         
-        B1 & B2 & B3 & B4 --> C;
-        C --> D;
+        B --> R1
+        R1 --> C[Retext Suggestions]
+        
+        subgraph Position Tracking
+            PT[SuggestionManager]
+            PM[ProseMirror Plugin]
+            PT <--> PM
+        end
+        
+        C --> PT
+        
+        subgraph Deduplication & Enhancement
+            D[SuggestionDeduplicator]
+            E[AI Enhancement Queue]
+            D --> E
+        end
+        
+        PT --> D
+        
+        subgraph State Management & UI
+            SC[SuggestionContext]
+            UI[UI Components<br/>(Decorations, Panels)]
+        end
+        
+        D --> SC
+        SC --> UI
     end
 
     subgraph Server-Side (API)
-        E[API Routes]
-        subgraph Endpoints
-            F1[/api/analysis/spell];
-            F2[/api/analysis/fast];
-            F3[/api/analysis/deep];
+        S1[AI Enhancement API]
+        S2[AI Error Detection API]
+        S3[SEO Analysis API]
+        S4[Deep Metrics API]
+        
+        subgraph AI Processing
+            AI1[Context Extraction]
+            AI2[GPT-4 Enhancement]
+            AI3[Incremental Analysis]
+            AI1 --> AI2
+            AI2 --> AI3
         end
-        E -- uses --> G[UnifiedAnalysisEngine];
-        G -- uses --> H[Analysis Toolbox];
+        
+        S1 & S2 --> AI1
     end
 
-    B2 --> F1;
-    B3 --> F2;
-    B4 --> F3;
+    E --> S1
+    B --800ms delay--> S3 & S4
+    S1 --> SC
+    S3 & S4 --> SC
 ```
 
 ---
 
-## 2. The Four Analysis Events
+## 2. The Multi-Tiered Analysis System
 
-This is the core of our responsiveness strategy. The system is best understood as four distinct events triggered by user actions, with dynamic debouncing based on edit type.
+The system operates on multiple tiers, each optimized for different types of feedback:
 
-| Event Name | What It Checks | How It's Triggered | The "Why" (Design Rationale) |
-| :--- | :--- | :--- | :--- |
-| **1. Live Client Metrics** | **Word Count** only. | **Instantly, on every keystroke.** | This is a pure client-side calculation in `useUnifiedAnalysis.ts`. It's decoupled from the server to give you the most critical metric with zero delay. It feels "live" because it is. |
-| **2. Real-time Spell Check** | **A single word** for spelling errors. | **On word boundaries** (when you type a space or punctuation). | This is a lightweight, targeted server check (`/api/analysis/spell`). Its purpose is to create the *feeling* of instant, as-you-type spell check without the delay of the larger analysis bundles. |
-| **3. "Fast" Analysis Bundle** | **Changed content only** for:<br/>- Spelling<br/>- Grammar<br/>- Style | **Dynamic timing:**<br/>- 100ms for paste<br/>- 200ms for deletions<br/>- 400ms for normal typing<br/>- 0ms for undo/redo | Incremental analysis that only checks what changed. Smart debouncing adapts to the type of edit for optimal responsiveness. |
-| **4. "Deep" Analysis Bundle** | **Document-wide metrics** for:<br/>- SEO metrics & suggestions<br/>- Readability Level<br/>- Reading Time | **~800ms after you stop typing.** | This is a slower debounced check for holistic insights. These metrics are less urgent, so we wait longer to avoid distracting you while writing. |
+| Tier | What It Analyzes | Where It Runs | Response Time | Trigger |
+|------|------------------|---------------|---------------|---------|
+| **0. Live Metrics** | Word count, character count | Client (pure JS) | 0ms | Every keystroke |
+| **1. Instant Analysis** | Spelling, grammar, style | Client (retext) | < 50ms | Every keystroke |
+| **2. AI Enhancement** | Complex fixes, context | Server (GPT-4) | 500-1000ms | 1s after changes |
+| **3. AI Detection** | Missed errors | Server (GPT-4) | 2000-3000ms | 3s after changes |
+| **4. Deep Analysis** | SEO, readability | Server (custom) | 500-800ms | 800ms after changes |
+
+### Client-Side Retext Analysis
+
+The client runs a sophisticated retext pipeline that provides instant feedback:
+
+```typescript
+// Retext plugin configuration
+const retextPlugins = {
+  spell: [retextSpell, { dictionary: enUS, personal: userDictionary }],
+  grammar: [
+    retextIndefiniteArticle,    // a/an errors
+    retextRepeatedWords,         // repeated repeated words
+    retextSentenceSpacing,       // Multiple  spaces
+    retextQuotes,               // "Smart" quotes
+    retextContractions,         // Apostrophe errors
+  ],
+  style: [
+    retextPassive,              // Passive voice detection
+    retextSimplify,             // Complex → simple words
+    retextReadability,          // Sentence complexity
+    retextEquality,             // Inclusive language
+  ]
+};
+```
+
+### Server-Side AI Enhancement
+
+AI selectively enhances suggestions that benefit from contextual understanding:
+
+```typescript
+interface AIEnhancement {
+  originalSuggestion: UnifiedSuggestion;
+  aiFix?: string;              // Better contextual fix
+  aiExplanation?: string;       // Why this fix is better
+  aiConfidence: number;         // 0-1 confidence score
+  additionalErrors?: Error[];   // Errors retext missed
+}
+```
 
 ---
 
-## 3. The Analysis Toolbox & Services
-
-All server-side analysis logic is modular and contained within our `UnifiedAnalysisEngine` (`services/analysis/engine.ts`).
-
-#### Spelling
-- **Purpose:** Fast, word-by-word and full-document spell-checking.
-- **Service File:** `services/analysis/spellcheck.ts`
-- **Core Library:** `nspell`
-- **How it Works:** This service is used in two events:
-    1.  **Real-time Spell Check:** Checks a single word.
-    2.  **Fast Analysis Bundle:** Checks the entire document to catch pasted text or other complex changes.
-
-#### Style & Basic Grammar
-- **Purpose:** Detects common style issues and basic grammar errors.
-- **Service Files:** `services/analysis/style.ts`, `services/analysis/basic-grammar.ts`
-- **Core Library:** `write-good`
-- **How it Works:** These services run as part of the **Fast Analysis Bundle**, leveraging `write-good` to find passive voice, weasel words, clichés, and custom rules for issues like repeated words.
-
-#### SEO Analysis
-- **Purpose:** Provides actionable feedback to help writers optimize content for search engines.
-- **Service File:** `services/analysis/seo.ts`
-- **Core Library:** Custom Rules
-- **How it Works:** Runs a series of checks on the document's content and metadata as part of the **Deep Analysis Bundle**. It checks for the presence and optimal length of the title and meta description, and verifies the target keyword is used appropriately.
-
-#### Document Metrics
-- **Purpose:** Calculates quantitative metrics about the document.
-- **Service File:** `services/analysis/metrics.ts`
-- **Core Libraries:** `text-statistics`, `reading-time`
-- **How it Works:** This service is used in two different ways:
-    1.  **Live Client Metrics:** The **word count** is calculated instantly on the client inside `useUnifiedAnalysis.ts` on every keystroke.
-    2.  **Deep Analysis Bundle:** **Reading Time** and **Readability** (Flesch-Kincaid Grade Level via `text-statistics`) are calculated on the server and sent back to the client. The `SuggestionContext` intelligently merges these with the live word count.
-
----
-
-## 4. The Position-Independent Suggestion System
-
-To ensure suggestions survive document edits and provide a stable user experience, our system separates **suggestion identity** from **position tracking**, leveraging ProseMirror's powerful position mapping capabilities.
+## 3. Position-Independent Suggestion System
 
 ### Core Architecture
-The system uses a two-layer approach:
+
+The system separates suggestion identity from position tracking:
 
 ```typescript
-// Layer 1: Suggestion Identity (stable, position-independent)
-interface Suggestion {
+// Stable suggestion identity (survives edits)
+interface UnifiedSuggestion {
   id: string;              // "spelling/misspelling-helo-0"
   ruleId: string;          // "spelling/misspelling"
-  matchText: string;       // "helo"
-  fixes: SuggestionAction[];
+  matchText: string;       // "helo world" (with context)
+  originalText: string;    // "helo" (actual error)
+  originalFrom: number;    // Used for occurrence counting only
+  originalTo: number;      // Not used for position tracking
+  category: SuggestionCategory;
+  subCategory: SubCategory;
   message: string;
-  severity: 'error' | 'warning';
-  category: string;
-  subCategory: string;
+  actions: SuggestionAction[];
+  severity: 'error' | 'warning' | 'suggestion';
+  source: 'retext' | 'server' | 'ai';
+  retextPlugin?: string;   // Which plugin generated it
 }
 
-// Layer 2: Position Tracking (dynamic, updated via ProseMirror)
-interface TrackedPosition {
-  suggestionId: string;
-  from: number;           // ProseMirror position
-  to: number;             // ProseMirror position
-}
-```
-
-### Stable ID Generation
-IDs are generated using the formula: `${ruleId}-${textHash}-${occurrence}`
-- **ruleId**: The specific rule that triggered (e.g., "spelling/misspelling")
-- **textHash**: First 8 chars of the error text (normalized)
-- **occurrence**: Which instance of this rule+text combination (0-based)
-
-Example: `"grammar/punctuation-period-0"` for the first missing period
-
-### Position Tracking via ProseMirror
-Instead of searching for text, positions are tracked and updated through ProseMirror transactions:
-
-```typescript
+// Dynamic position tracking (updated via ProseMirror)
 class SuggestionManager {
-  updatePositions(tr: Transaction): void {
+  private positions = new Map<string, TrackedPosition>();
+  private suggestions = new Map<string, UnifiedSuggestion>();
+  
+  registerSuggestion(suggestion: UnifiedSuggestion, from: number, to: number) {
+    this.suggestions.set(suggestion.id, suggestion);
+    this.positions.set(suggestion.id, { 
+      suggestionId: suggestion.id,
+      from, 
+      to,
+      version: 0 
+    });
+  }
+  
+  updatePositions(tr: Transaction) {
     this.positions.forEach((pos, id) => {
-      // Map positions through the transaction
       const mappedFrom = tr.mapping.map(pos.from);
       const mappedTo = tr.mapping.map(pos.to);
       
       if (mappedFrom !== null && mappedTo !== null) {
-        // Validate text hasn't changed
         const currentText = tr.doc.textBetween(mappedFrom, mappedTo);
-        if (currentText === this.suggestions.get(id).matchText) {
-          // Update position
-          this.positions.set(id, { from: mappedFrom, to: mappedTo });
+        const suggestion = this.suggestions.get(id);
+        
+        // Validate text hasn't changed
+        if (currentText === suggestion?.originalText) {
+          pos.from = mappedFrom;
+          pos.to = mappedTo;
+          pos.version++;
+        } else {
+          // Text changed, remove suggestion
+          this.removeSuggestion(id);
         }
-        // Otherwise, suggestion is automatically removed
       }
     });
   }
 }
 ```
 
-### Key Benefits
-1. **Real-time Compatible:** Works perfectly with live editing
-2. **O(1) Performance:** No text searching required
-3. **Handles All Edge Cases:** Undo/redo, collaborative editing, etc.
-4. **Automatic Cleanup:** Suggestions removed when text is edited
-5. **Position Accuracy:** Always accurate via transaction mapping
+### Stable ID Generation
 
-### Implementation Details
-
-The system is implemented as a ProseMirror plugin that:
-1. Tracks all suggestion positions in the document
-2. Updates positions automatically on every transaction
-3. Validates that text at each position hasn't changed
-4. Provides decorations for visual rendering
-5. Removes suggestions when their text is edited
+IDs use occurrence counting for stability:
 
 ```typescript
-// ProseMirror plugin for automatic position tracking
-const suggestionPlugin = new Plugin({
-  key: suggestionTrackingKey,
+function generateStableId(
+  matchText: string,
+  ruleId: string,
+  documentText: string,
+  position: number
+): string {
+  // Count occurrences before this position
+  let occurrenceCount = 0;
+  let searchIndex = -1;
   
-  state: {
-    apply(tr, value) {
-      // Update all positions through transaction mapping
-      value.manager.updatePositions(tr);
-      return value;
-    }
-  },
-  
-  props: {
-    decorations(state) {
-      // Return decorations for rendering suggestions
-      return DecorationSet.create(state.doc, /* ... */);
+  while ((searchIndex = documentText.indexOf(matchText, searchIndex + 1)) !== -1) {
+    if (searchIndex < position) {
+      occurrenceCount++;
+    } else {
+      break;
     }
   }
-});
+  
+  const textHash = matchText.slice(0, 8).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return `${ruleId}-${textHash}-${occurrenceCount}`;
+}
 ```
 
-This approach ensures suggestions remain accurate even through complex editing operations like find-and-replace, undo/redo, or collaborative edits.
+### Reconciliation Windows
 
-### Incremental Analysis System
-
-To achieve optimal performance, the system only analyzes changed content:
+To prevent flickering when fixes are applied:
 
 ```typescript
-interface ParagraphCache {
-  hash: string;                  // Content hash for validation
-  suggestions: Suggestion[];     // Cached analysis results
-  timestamp: number;
+class ReconciliationManager {
+  private reconciliationWindows = new Map<string, number>();
+  
+  addReconciliationWindow(area: string, duration = 3000) {
+    this.reconciliationWindows.set(area, Date.now() + duration);
+  }
+  
+  isInReconciliation(position: number, text: string): boolean {
+    for (const [area, expiry] of this.reconciliationWindows) {
+      if (Date.now() < expiry && area.includes(text)) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+```
+
+---
+
+## 4. Deduplication & Priority System
+
+### Multi-Source Deduplication
+
+The system intelligently handles overlapping suggestions from different sources:
+
+```typescript
+class SuggestionDeduplicator {
+  deduplicate(suggestions: UnifiedSuggestion[]): UnifiedSuggestion[] {
+    const groups = this.groupOverlapping(suggestions);
+    
+    return groups.map(group => {
+      // Priority: AI Enhanced > Server > Client
+      const aiEnhanced = group.find(s => s.source === 'ai');
+      const server = group.find(s => s.source === 'server');
+      const client = group.find(s => s.source === 'retext');
+      
+      return aiEnhanced || server || client;
+    });
+  }
+  
+  private groupOverlapping(suggestions: UnifiedSuggestion[]): UnifiedSuggestion[][] {
+    // Group by position overlap
+    const groups: UnifiedSuggestion[][] = [];
+    
+    for (const suggestion of suggestions) {
+      const pos = this.positionManager.getPosition(suggestion.id);
+      if (!pos) continue;
+      
+      const overlappingGroup = groups.find(group =>
+        group.some(s => {
+          const sPos = this.positionManager.getPosition(s.id);
+          return this.rangesOverlap(pos, sPos);
+        })
+      );
+      
+      if (overlappingGroup) {
+        overlappingGroup.push(suggestion);
+      } else {
+        groups.push([suggestion]);
+      }
+    }
+    
+    return groups;
+  }
+  
+  shouldEnhance(suggestion: UnifiedSuggestion): boolean {
+    // Don't enhance if retext already provides good fixes
+    if (suggestion.source === 'retext' && suggestion.actions.length > 0) {
+      // Only enhance complex cases
+      return ['context-dependent', 'tone', 'clarity'].includes(suggestion.subCategory);
+    }
+    return true;
+  }
+}
+```
+
+---
+
+## 5. Caching & Optimization Strategy
+
+### Multi-Level Cache Architecture
+
+```typescript
+// L1: In-memory cache for hot data
+class L1Cache {
+  private retextCache = new LRUCache<string, RetextResult>({
+    max: 1000,
+    ttl: 24 * 60 * 60 * 1000,  // 24 hours for retext
+  });
+  
+  private aiCache = new LRUCache<string, AIEnhancement>({
+    max: 500,
+    ttl: 60 * 60 * 1000,       // 1 hour for AI
+  });
+}
+
+// L2: IndexedDB for persistent cache
+class L2Cache {
+  async store(key: string, data: any, type: 'retext' | 'ai') {
+    const db = await this.openDB();
+    const tx = db.transaction(['cache'], 'readwrite');
+    await tx.objectStore('cache').put({
+      key,
+      data,
+      type,
+      timestamp: Date.now(),
+      expires: Date.now() + (type === 'retext' ? 86400000 : 3600000)
+    });
+  }
+}
+
+// L3: Cross-document cache sharing
+class CrossDocumentCache {
+  shareableCategories = ['spelling', 'grammar', 'style'];
+  
+  generateShareableKey(suggestion: UnifiedSuggestion): string | null {
+    if (!this.shareableCategories.includes(suggestion.category)) {
+      return null;
+    }
+    
+    // Create topic-aware shareable key
+    const topicHash = this.getTopicHash(suggestion.context);
+    return `shared:${topicHash}:${suggestion.ruleId}:${suggestion.matchText}`;
+  }
+}
+```
+
+### Incremental Analysis
+
+Only analyze changed content:
+
+```typescript
+interface IncrementalAnalysisResult {
+  changedParagraphs: string[];
+  cachedResults: UnifiedSuggestion[];
+  newResults: UnifiedSuggestion[];
+  cacheHitRate: number;
 }
 
 class IncrementalAnalyzer {
-  analyze(previousDoc: Document, currentDoc: Document): AnalysisResult {
-    // 1. Identify changed paragraphs
-    const changes = diffParagraphs(previousDoc, currentDoc);
+  async analyze(doc: Document, previousHashes: Map<string, string>) {
+    const paragraphs = this.extractParagraphs(doc);
+    const changed: Paragraph[] = [];
+    const unchanged: Paragraph[] = [];
     
-    // 2. Reuse cached results for unchanged paragraphs
-    const cachedResults = getCachedSuggestions(unchanged);
+    for (const para of paragraphs) {
+      const hash = this.hashContent(para.content);
+      const prevHash = previousHashes.get(para.id);
+      
+      if (hash !== prevHash) {
+        changed.push(para);
+      } else {
+        unchanged.push(para);
+      }
+    }
     
-    // 3. Only analyze changed paragraphs
-    const newResults = analyzeChanges(changes);
+    // Only analyze changed paragraphs
+    const newResults = await this.analyzeContent(changed);
+    const cachedResults = this.getCachedResults(unchanged);
     
-    // 4. Merge and return
-    return mergeResults(cachedResults, newResults);
+    return {
+      changedParagraphs: changed.map(p => p.id),
+      cachedResults,
+      newResults,
+      cacheHitRate: unchanged.length / paragraphs.length
+    };
   }
 }
 ```
 
-This enables:
-- 80% reduction in analysis work on typical edits
-- Sub-100ms response for single word changes
-- Dramatic cost savings for AI-powered features
-- Seamless integration with the position tracking system
-
 ---
 
-## 5. AI Integration Architecture
+## 6. AI Integration Architecture
 
-WordWise integrates AI seamlessly into the existing architecture through two complementary approaches:
+### Selective AI Enhancement
 
-### AI-Enhanced Suggestions (Epic 2)
-AI fills gaps where local analysis cannot provide fixes:
+AI enhances suggestions only when beneficial:
 
-```mermaid
-graph LR
-    A[Local Analysis] --> B{Has Fix?}
-    B -->|No| C[AI Fix Generation]
-    B -->|Yes| D[Use Local Fix]
-    C --> E[Enhanced Suggestion]
-    D --> E
+```typescript
+class AIEnhancementService {
+  async enhance(suggestions: UnifiedSuggestion[], context: DocumentContext) {
+    // Filter suggestions that need enhancement
+    const needsEnhancement = suggestions.filter(s => 
+      this.deduplicator.shouldEnhance(s)
+    );
+    
+    // Batch for efficiency
+    const batches = this.createBatches(needsEnhancement, 8000); // Token limit
+    
+    // Process with streaming for better UX
+    for (const batch of batches) {
+      const stream = await this.streamEnhancement(batch, context);
+      
+      for await (const partial of stream) {
+        // Update UI progressively
+        this.updateSuggestion(partial);
+      }
+    }
+  }
+  
+  private async streamEnhancement(batch: UnifiedSuggestion[], context: DocumentContext) {
+    return streamObject({
+      model: this.selectModel(batch),
+      schema: enhancementSchema,
+      prompt: this.buildPrompt(batch, context),
+      onFinish: ({ usage }) => this.trackUsage(usage)
+    });
+  }
+  
+  private selectModel(suggestions: UnifiedSuggestion[]): string {
+    const complexity = this.estimateComplexity(suggestions);
+    
+    return {
+      simple: 'gpt-3.5-turbo',
+      moderate: 'gpt-4o-mini',
+      complex: 'gpt-4o'
+    }[complexity];
+  }
+}
 ```
 
-- **Selective Enhancement:** Only uses AI when needed
-- **Progressive Disclosure:** AI suggestions marked with sparkle icon
-- **Cost Effective:** Incremental analysis reduces AI calls by 100x
+### AI Error Detection
 
-### AI Content Assistant (Epic 3)
-A focused chat interface for content operations:
+Find errors that rule-based systems miss:
 
-- **Simple Integration:** Tab in existing right panel
-- **Context Aware:** Knows about document and selected text
-- **Tool Calling:** Rewrite, generate, and improve tools
-- **Streaming UI:** Real-time response with `useChat` hook
+```typescript
+class AIErrorDetector {
+  async detectAdditionalErrors(
+    doc: Document,
+    existingSuggestions: string[]
+  ): Promise<UnifiedSuggestion[]> {
+    // Only run on changed paragraphs
+    const changedContent = this.getChangedParagraphs(doc);
+    
+    if (changedContent.length === 0) return [];
+    
+    const { errors } = await generateObject({
+      model: 'gpt-4o-mini',
+      schema: errorDetectionSchema,
+      prompt: `Find writing errors not caught by these rules: ${existingSuggestions.join(', ')}
+               Focus on: context errors, unclear references, logical flow.
+               Content: ${changedContent}`
+    });
+    
+    return errors.map(e => this.convertToSuggestion(e));
+  }
+}
+```
 
 ---
 
-## 6. Performance Targets
+## 7. Performance Monitoring
 
-After Epic 1.5 improvements, WordWise achieves:
+### Comprehensive Metrics
 
-| Metric | Current | Target | Status |
-|--------|---------|--------|--------|
-| Single word analysis | 400ms | < 50ms | 🟡 Pending |
-| Full document (10k words) | 2-3s | < 500ms | 🟡 Pending |
-| Suggestion accuracy | ~90% | 100% | 🟡 Pending |
-| Memory usage | Unbounded | < 50MB | 🟡 Pending |
-| AI response (first token) | N/A | < 500ms | 🟡 Pending |
+```typescript
+interface PerformanceMetrics {
+  // Client-side retext performance
+  retextMetrics: {
+    processingTime: number[];      // Per-analysis times
+    cacheHitRate: number;          // Client cache hits
+    pluginPerformance: Record<string, number>;
+  };
+  
+  // Server-side AI performance
+  aiMetrics: {
+    enhancementLatency: number[];  // Time to enhance
+    tokenUsage: TokenUsage;        // Cost tracking
+    cacheHitRate: number;          // AI cache hits
+    modelUsage: Record<string, number>;
+  };
+  
+  // Overall system health
+  systemMetrics: {
+    suggestionsHandledByRetext: number;  // % avoiding AI
+    averageTimeToFirstSuggestion: number;
+    memoryUsage: number;
+    errorRate: number;
+  };
+}
+
+class PerformanceMonitor {
+  track(event: AnalysisEvent) {
+    const startTime = performance.now();
+    
+    return {
+      onComplete: (result: any) => {
+        const duration = performance.now() - startTime;
+        
+        if (event.source === 'retext') {
+          this.metrics.retextMetrics.processingTime.push(duration);
+        } else if (event.source === 'ai') {
+          this.metrics.aiMetrics.enhancementLatency.push(duration);
+        }
+        
+        this.updateAverages();
+      }
+    };
+  }
+}
+```
 
 ---
 
-## 7. Implementation Roadmap
+## 8. User Preferences & Personalization
 
-### Epic 1.5: Architecture Improvements (4 weeks)
+### Preference System
+
+```typescript
+interface UserPreferences {
+  // Retext preferences
+  retext: {
+    enabled: boolean;
+    runLocation: 'client' | 'server';
+    enabledRules: {
+      spelling: boolean;
+      grammar: boolean;
+      style: boolean;
+      clarity: boolean;
+    };
+    cacheResults: boolean;
+  };
+  
+  // AI preferences
+  ai: {
+    enabled: boolean;
+    enhancementLevel: 'minimal' | 'balanced' | 'aggressive';
+    confidenceThreshold: number;
+    categories: Record<string, boolean>;
+    costSaving: boolean;
+    shareCache: boolean;
+  };
+  
+  // Learned preferences
+  learned: {
+    ignoredRules: string[];
+    preferredFixes: Record<string, string>;
+    writingStyle: WritingStyle;
+  };
+}
+```
+
+### Feedback Learning
+
+```typescript
+class FeedbackTracker {
+  async trackAction(
+    suggestion: UnifiedSuggestion,
+    action: 'accepted' | 'rejected' | 'modified',
+    appliedFix?: string
+  ) {
+    await db.insert(suggestionFeedback).values({
+      suggestionId: suggestion.id,
+      source: suggestion.source,
+      retextPlugin: suggestion.retextPlugin,
+      category: suggestion.category,
+      action,
+      appliedFix,
+      confidence: suggestion.aiConfidence
+    });
+    
+    // Update learned preferences
+    if (action === 'rejected' && this.isFrequentlyRejected(suggestion.ruleId)) {
+      this.preferences.learned.ignoredRules.push(suggestion.ruleId);
+    }
+  }
+}
+```
+
+---
+
+## 9. Performance Targets
+
+After the retext migration, WordWise achieves:
+
+| Metric | Before | Current | Target | Status |
+|--------|--------|---------|--------|--------|
+| First suggestion | 400ms | < 50ms | < 50ms | ✅ Achieved |
+| Full document (10k) | 2-3s | < 100ms | < 100ms | ✅ Achieved |
+| AI enhancement | N/A | 500-1000ms | < 1s | ✅ On track |
+| Retext cache hit | N/A | 85% | > 80% | ✅ Achieved |
+| AI cost reduction | N/A | 60% | > 70% | 🟡 In progress |
+| Memory usage | Unbounded | < 50MB | < 50MB | ✅ Achieved |
+
+---
+
+## 10. Implementation Status
+
+### Epic 1.5: Architecture Improvements
 - ✅ Sprint 1-6: Foundation and basic features
-- 🟡 Sprint 7: Position-independent suggestions with ProseMirror tracking
-- 🟡 Sprint 8: Incremental analysis with paragraph-level caching
-- 🟡 Sprint 9: Smart responsiveness with dynamic debouncing
-- 🟡 Sprint 10: Performance optimization with virtual scrolling
+- ✅ Sprint 7-10: Position tracking and performance
 
-### Epic 2: AI-Enhanced Suggestions (3 weeks)
-- 🟡 Week 1: AI fix generation
-- 🟡 Week 2: Contextual error detection
-- 🟡 Week 3: Polish and preferences
+### Epic 2: AI-Enhanced Suggestions
+- ✅ Sprint 001.75: Retext architecture migration
+- 🟡 Sprint 002: Smart context & learning (In Progress)
+- 🟡 Sprint 003: Optimization & polish (Planned)
 
-### Epic 3: AI Content Assistant (4 weeks)
-- 🟡 Week 1: Basic chat interface
-- 🟡 Week 2: Tool calling implementation
-- 🟡 Week 3: Templates and shortcuts
-- 🟡 Week 4: Polish and launch
+### Epic 3: AI Content Assistant
+- 🟡 Week 1-4: Chat interface and tools (Planned)
 
-This document serves as the canonical reference for WordWise's architecture and should be updated as implementation progresses.
+This document serves as the canonical reference for WordWise's hybrid architecture. The system combines the instant responsiveness of client-side retext analysis with the contextual intelligence of server-side AI, delivering a writing assistant that feels both immediate and intelligent.

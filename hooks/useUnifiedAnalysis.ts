@@ -4,7 +4,7 @@
  * multi-tiered debounce strategy to provide responsive feedback. Real-time
  * spell checks are sent instantly, fast checks (style, grammar) are sent after
  * a short delay, and deep metric analysis is sent after a longer delay.
- * @modified 2024-12-28 - Added AI enhancement tier with 2-second debounce
+ * @modified 2024-12-28 - Integrated retext for client-side analysis
  */
 'use client';
 
@@ -15,6 +15,9 @@ import { Node } from '@tiptap/pm/model';
 import { toast } from 'sonner';
 import { EnhancedSuggestion, UnifiedSuggestion } from '@/types/suggestions';
 import { analysisCache } from '@/services/analysis/cache';
+import { useRetextAnalysis } from './useRetextAnalysis';
+import { SuggestionDeduplicator } from '@/services/analysis/suggestion-deduplicator';
+import { AIQueueManager } from '@/services/ai/ai-queue-manager';
 
 const AI_ENHANCEMENT_DELAY = 1000; // Reduced from 2000ms to 1000ms
 
@@ -36,12 +39,47 @@ export const useUnifiedAnalysis = (
   const enhancedSuggestionIds = useRef<Set<string>>(new Set());
   const aiEnhancementTimer = useRef<NodeJS.Timeout | null>(null);
   const lastEnhancedDocHash = useRef<string>('');
+  const aiQueueManager = useRef<AIQueueManager>(new AIQueueManager());
+  
+  // RETEXT: Get client-side analysis results
+  const { 
+    allSuggestions: retextSuggestions, 
+    fallbackToServer,
+    isProcessing: retextProcessing 
+  } = useRetextAnalysis(doc, isReady);
+  
+  const [serverSuggestions, setServerSuggestions] = useState<UnifiedSuggestion[]>([]);
 
   // Helper to generate a simple hash of document content
   const getDocHash = useCallback((doc: Node | null): string => {
     if (!doc) return '';
     return doc.textContent.slice(0, 100) + doc.textContent.length;
   }, []);
+  
+  // Set up AI Queue Manager callback
+  useEffect(() => {
+    aiQueueManager.current.setUpdateCallback((enhanced: EnhancedSuggestion[]) => {
+      setEnhancementState('enhanced');
+      
+      // Update enhanced suggestions map
+      const newMap = new Map(enhancedSuggestions);
+      enhanced.forEach(s => {
+        newMap.set(s.id, s);
+        enhancedSuggestionIds.current.add(s.id);
+      });
+      setEnhancedSuggestions(newMap);
+      
+      // Persist to cache
+      if (documentId) {
+        const enhancedCacheKey = `enhanced-suggestions-${documentId}`;
+        const allEnhanced = Array.from(newMap.values());
+        analysisCache.setAsync(enhancedCacheKey, allEnhanced, 3600);
+      }
+      
+      // Trigger re-deduplication
+      deduplicateAndUpdate();
+    });
+  }, [documentId, enhancedSuggestions]);
 
   // Immediate check to clear suggestions if the document is empty
   useEffect(() => {
@@ -50,6 +88,7 @@ export const useUnifiedAnalysis = (
       setMetrics(null);
       setEnhancementState('idle');
       setEnhancedSuggestions(new Map());
+      aiQueueManager.current.clear();
     }
   }, [doc, isReady, updateSuggestions, setMetrics]);
 
@@ -61,13 +100,44 @@ export const useUnifiedAnalysis = (
     setMetrics({ wordCount });
   }, [doc, setMetrics]);
 
+  // Deduplicate and update suggestions
+  const deduplicateAndUpdate = useCallback(() => {
+    // Get all enhanced suggestions as array
+    const enhancedArray = Array.from(enhancedSuggestions.values());
+    
+    // Deduplicate: Client (retext) < Server < AI Enhanced
+    const deduplicated = SuggestionDeduplicator.deduplicate(
+      retextSuggestions,
+      serverSuggestions,
+      enhancedArray
+    );
+    
+    // Merge document-wide suggestions (SEO)
+    const documentWide = SuggestionDeduplicator.mergeDocumentWideSuggestions([
+      ...retextSuggestions,
+      ...serverSuggestions,
+      ...enhancedArray
+    ]);
+    
+    const allSuggestions = [...deduplicated, ...documentWide];
+    
+    console.log('[Deduplication] Results:', {
+      retext: retextSuggestions.length,
+      server: serverSuggestions.length,
+      enhanced: enhancedArray.length,
+      final: allSuggestions.length
+    });
+    
+    updateSuggestions(['spelling', 'grammar', 'style', 'seo', 'readability'], allSuggestions);
+  }, [retextSuggestions, serverSuggestions, enhancedSuggestions, updateSuggestions]);
+
   // Tier 2: Deep Analysis (Metrics, SEO) - Long debounce
   const debouncedDeepAnalysis = useDebouncedCallback(async (currentDoc, metadata) => {
     if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 5) {
       setMetrics(null);
       // Only clear SEO suggestions if SEO checks are enabled
       if (enableSEOChecks) {
-        updateSuggestions(['seo'], []);
+        setServerSuggestions(prev => prev.filter(s => s.category !== 'seo'));
       }
       return;
     }
@@ -86,14 +156,12 @@ export const useUnifiedAnalysis = (
       setMetrics(metrics || null);
       
       // Only update SEO suggestions if enabled
-      if (enableSEOChecks) {
-        updateSuggestions(['seo', 'readability'], suggestions || []);
-      } else {
-        // Only update non-SEO suggestions
-        const nonSEOSuggestions = (suggestions || []).filter((s: UnifiedSuggestion) => 
-          s.category !== 'seo'
-        );
-        updateSuggestions(['spelling', 'grammar', 'style'], nonSEOSuggestions);
+      if (enableSEOChecks && suggestions) {
+        const seoSuggestions = suggestions.filter((s: UnifiedSuggestion) => s.category === 'seo');
+        setServerSuggestions(prev => {
+          const nonSEO = prev.filter(s => s.category !== 'seo');
+          return [...nonSEO, ...seoSuggestions];
+        });
       }
     } catch (error) {
       console.error('Failed to fetch deep analysis:', error);
@@ -101,26 +169,23 @@ export const useUnifiedAnalysis = (
     }
   }, 800);
 
-  // Tier 1: Fast Analysis (Grammar, Style, Spelling) - Short debounce
+  // Tier 1: Fast Analysis - Only if retext fails
   const debouncedFastAnalysis = useDebouncedCallback(async (currentDoc) => {
-    console.log('[useUnifiedAnalysis] debouncedFastAnalysis called, doc length:', currentDoc?.textContent?.length || 0);
+    console.log('[useUnifiedAnalysis] Fast analysis called, fallback:', fallbackToServer);
     
-    if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 2) {
-      // If the document is too short, clear out all fast-check categories
-      console.log('[useUnifiedAnalysis] Document too short, clearing suggestions');
-      updateSuggestions(['grammar', 'style', 'spelling'], []);
+    // Skip if retext is working
+    if (!fallbackToServer) {
+      console.log('[useUnifiedAnalysis] Skipping server analysis - retext is working');
       return;
     }
     
-    console.log('[useUnifiedAnalysis] Sending document for fast analysis:', {
-      docType: currentDoc.type?.name,
-      textContent: currentDoc.textContent,
-      textLength: currentDoc.textContent?.length,
-      preview: currentDoc.textContent.substring(0, 100) + '...'
-    });
+    if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 2) {
+      setServerSuggestions([]);
+      return;
+    }
     
     try {
-      console.log('[useUnifiedAnalysis] Fetching fast analysis...');
+      console.log('[useUnifiedAnalysis] Fetching server analysis (retext fallback)...');
       const response = await fetch('/api/analysis/fast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -129,23 +194,10 @@ export const useUnifiedAnalysis = (
       if (!response.ok) throw new Error(`Fast analysis request failed: ${response.status}`);
       const { suggestions } = await response.json();
       
-      console.log('[useUnifiedAnalysis] Received from fast API:', {
-        count: suggestions?.length || 0,
-        firstSuggestion: suggestions?.[0] ? {
-          id: suggestions[0].id,
-          category: suggestions[0].category,
-          matchText: suggestions[0].matchText,
-          contextBefore: suggestions[0].contextBefore,
-          contextAfter: suggestions[0].contextAfter,
-          hasPosition: !!suggestions[0].position,
-          message: suggestions[0].message
-        } : null
-      });
-      
-      updateSuggestions(['grammar', 'style', 'spelling'], suggestions || []);
+      setServerSuggestions(suggestions || []);
     } catch (error) {
       console.error('Failed to fetch fast analysis:', error);
-      toast.error('Fast analysis service is unavailable.');
+      toast.error('Analysis service is unavailable.');
     }
   }, 400);
 
@@ -175,78 +227,18 @@ export const useUnifiedAnalysis = (
     restoreEnhancedSuggestions();
   }, [documentId]);
 
-  // Immediate AI Enhancement for new suggestions
-  const enhanceNewSuggestions = useCallback(async (currentDoc: Node, allSuggestions: UnifiedSuggestion[]) => {
-    // Filter out suggestions that have already been enhanced
-    const newSuggestions = allSuggestions.filter(s => !enhancedSuggestionIds.current.has(s.id));
-    
-    if (newSuggestions.length === 0) {
-      console.log('[AI Enhancement] No new suggestions to enhance');
-      return;
+  // Queue suggestions for AI enhancement
+  useEffect(() => {
+    const allCurrentSuggestions = [...retextSuggestions, ...serverSuggestions];
+    if (allCurrentSuggestions.length > 0) {
+      aiQueueManager.current.enqueueSuggestions(allCurrentSuggestions);
     }
+  }, [retextSuggestions, serverSuggestions]);
 
-    console.log('[AI Enhancement] Enhancing new suggestions immediately:', {
-      newCount: newSuggestions.length,
-      newIds: newSuggestions.map(s => s.id)
-    });
-
-    // Mark these as being enhanced
-    newSuggestions.forEach(s => enhancedSuggestionIds.current.add(s.id));
-    
-    try {
-      const response = await fetch('/api/analysis/ai-enhance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          suggestions: newSuggestions,
-          doc: currentDoc.toJSON(),
-          metadata: {
-            title: documentMetadata.title,
-            targetKeyword: documentMetadata.targetKeyword,
-            metaDescription: documentMetadata.metaDescription,
-            keywords: documentMetadata.keywords
-          }
-        })
-      });
-      
-      if (response.ok) {
-        const { enhanced } = await response.json();
-        
-        console.log('[AI Enhancement] Enhanced new suggestions:', {
-          total: enhanced.length,
-          withAIFixes: enhanced.filter((s: EnhancedSuggestion) => s.aiFix).length
-        });
-        
-        // Merge with existing enhanced suggestions
-        const newEnhancedMap = new Map(enhancedSuggestions);
-        enhanced.forEach((s: EnhancedSuggestion) => {
-          newEnhancedMap.set(s.id, s);
-        });
-        
-        setEnhancedSuggestions(newEnhancedMap);
-        
-        // Persist to cache if documentId is available
-        if (documentId) {
-          const enhancedCacheKey = `enhanced-suggestions-${documentId}`;
-          const allEnhanced = Array.from(newEnhancedMap.values());
-          await analysisCache.setAsync(enhancedCacheKey, allEnhanced, 3600); // 1 hour TTL
-          console.log('[AI Enhancement] Persisted enhanced suggestions to cache');
-        }
-        
-        // Update only the new suggestions in the UI
-        const updatedSuggestions = allSuggestions.map(s => {
-          const enhanced = newEnhancedMap.get(s.id);
-          return enhanced || s;
-        });
-        
-        updateSuggestions(['spelling', 'grammar', 'style', 'seo'], updatedSuggestions);
-      }
-    } catch (error) {
-      console.error('[AI Enhancement] Error enhancing new suggestions:', error);
-      // Remove failed IDs so they can be retried
-      newSuggestions.forEach(s => enhancedSuggestionIds.current.delete(s.id));
-    }
-  }, [enhancedSuggestions, updateSuggestions, documentMetadata, documentId]);
+  // Trigger deduplication when any suggestions change
+  useEffect(() => {
+    deduplicateAndUpdate();
+  }, [retextSuggestions, serverSuggestions, enhancedSuggestions, deduplicateAndUpdate]);
 
   // Delayed AI Enhancement for finding additional errors
   const debouncedAdditionalErrorDetection = useDebouncedCallback(async (currentDoc) => {
@@ -272,9 +264,8 @@ export const useUnifiedAnalysis = (
         const { additionalSuggestions } = await response.json();
         if (additionalSuggestions && additionalSuggestions.length > 0) {
           console.log('[AI Enhancement] Found additional errors:', additionalSuggestions.length);
-          // Merge with existing suggestions instead of using 'ai' category
-          const currentSuggestions = [...suggestions, ...additionalSuggestions];
-          updateSuggestions(['spelling', 'grammar', 'style', 'seo'], currentSuggestions);
+          // Add to server suggestions (they'll be deduplicated)
+          setServerSuggestions(prev => [...prev, ...additionalSuggestions]);
         }
       }
     } catch (error) {
@@ -282,26 +273,11 @@ export const useUnifiedAnalysis = (
     }
   }, 3000); // 3 second delay for additional error detection
 
-  // Tier 0: Real-time Spell Check (as user types)
+  // Tier 0: Real-time Spell Check - Now handled by retext
   const runRealtimeSpellCheck = useCallback(async (word: string, currentDoc: Node) => {
-    if (!word || !currentDoc) return;
-    try {
-      const response = await fetch('/api/analysis/spell', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word, doc: currentDoc.toJSON() }),
-      });
-      if (!response.ok) throw new Error('Real-time spell check failed');
-      const { suggestions } = await response.json();
-      if (suggestions && suggestions.length > 0) {
-        // Spell check should add to existing suggestions, not replace a whole category
-        // Note: this part of the logic might need review, but for now we unify the function call
-        updateSuggestions(['spelling'], suggestions);
-      }
-    } catch (error) {
-      console.error('Real-time spell check error:', error);
-    }
-  }, [updateSuggestions]);
+    // This is now a no-op since retext handles spell checking
+    console.log('[useUnifiedAnalysis] Real-time spell check called (handled by retext)');
+  }, []);
 
   // Manual SEO analysis trigger
   const runSEOAnalysis = useCallback(() => {
@@ -310,16 +286,6 @@ export const useUnifiedAnalysis = (
       debouncedDeepAnalysis(doc, documentMetadata);
     }
   }, [doc, isReady, documentMetadata, debouncedDeepAnalysis]);
-
-  // Watch for new suggestions and enhance them immediately
-  useEffect(() => {
-    if (!doc || !isReady || suggestions.length === 0) {
-      return;
-    }
-
-    // Enhance new suggestions immediately
-    enhanceNewSuggestions(doc, suggestions);
-  }, [suggestions, doc, isReady, enhanceNewSuggestions]);
 
   // Trigger additional error detection on document changes
   useEffect(() => {
@@ -347,8 +313,11 @@ export const useUnifiedAnalysis = (
     if (enableSEOChecks) {
       debouncedDeepAnalysis(doc, documentMetadata);
     }
-    debouncedFastAnalysis(doc);
-  }, [doc, JSON.stringify(documentMetadata), debouncedDeepAnalysis, debouncedFastAnalysis, enableSEOChecks]);
+    // Only run server analysis if retext fails
+    if (fallbackToServer) {
+      debouncedFastAnalysis(doc);
+    }
+  }, [doc, JSON.stringify(documentMetadata), debouncedDeepAnalysis, debouncedFastAnalysis, enableSEOChecks, fallbackToServer]);
 
   // We return the real-time checker so it can be called by the editor
   return { 
@@ -356,6 +325,8 @@ export const useUnifiedAnalysis = (
     debouncedFastAnalysis,
     runSEOAnalysis,
     enhancementState,
-    enhancedSuggestions
+    enhancedSuggestions,
+    isProcessing: retextProcessing,
+    retextFallback: fallbackToServer
   };
 }; 
