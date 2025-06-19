@@ -4,6 +4,7 @@
  * different analysis services (spelling, grammar, style, seo, metrics) in different
  * tiers based on their performance characteristics (real-time, fast, deep). It is
  * consumed by the `useUnifiedAnalysis` hook.
+ * @modified 2024-12-28 - Updated to use text-based suggestions
  */
 import { SEOAnalyzer } from './seo';
 import { StyleAnalyzer } from './style';
@@ -63,6 +64,7 @@ export class UnifiedAnalysisEngine {
     // Create a real Tiptap document from the incoming JSON
     const schema = getSchema(serverEditorExtensions);
     const doc = schema.nodeFromJSON(jsonDoc);
+    const documentText = doc.textContent;
   
     // Find all occurrences of the misspelled word to create suggestions
     const suggestions: UnifiedSuggestion[] = [];
@@ -77,14 +79,13 @@ export class UnifiedAnalysisEngine {
         const from = pos + match.index;
         const to = from + word.length;
         const suggested = spellChecker.suggest(word);
-        const contextSnippet = `${node.text.substring(match.index - 10, match.index)}...${node.text.substring(to - pos, to - pos + 10)}`;
-  
+        
         suggestions.push(
           createSuggestion(
             from,
             to,
             word,
-            contextSnippet,
+            documentText,
             'spelling',
             SPELLING_SUB_CATEGORY.MISSPELLING,
             SPELLCHECK_RULE_ID,
@@ -108,10 +109,30 @@ export class UnifiedAnalysisEngine {
   // Tier 2: Smart checks (local, ~300-500ms) - E.g., Style, Basic Grammar
   runFastChecks(doc: any): UnifiedSuggestion[] {
     if (!this.isInitialized || !doc) return [];
-    const styleSuggestions = this.styleAnalyzer.run(doc);
-    const grammarSuggestions = this.basicGrammarChecker.run(doc);
+    
+    // Get document text once for all analyzers
+    const documentText = doc.textContent;
+    
+    const styleSuggestions = this.styleAnalyzer.run(doc, documentText);
+    const grammarSuggestions = this.basicGrammarChecker.run(doc, documentText);
     const spellingSuggestions = this.runSpellCheck(doc);
-    return [...styleSuggestions, ...grammarSuggestions, ...spellingSuggestions];
+    
+    const allSuggestions = [...styleSuggestions, ...grammarSuggestions, ...spellingSuggestions];
+    
+    console.log('[runFastChecks] Returning suggestions:', {
+      style: styleSuggestions.length,
+      grammar: grammarSuggestions.length,
+      spelling: spellingSuggestions.length,
+      total: allSuggestions.length,
+      firstSuggestion: allSuggestions[0] ? {
+        id: allSuggestions[0].id,
+        category: allSuggestions[0].category,
+        matchText: allSuggestions[0].matchText,
+        hasPosition: !!allSuggestions[0].position
+      } : null
+    });
+    
+    return allSuggestions;
   }
 
   // Tier 3: Deep checks (API-driven, ~2000ms)
@@ -183,6 +204,12 @@ export class UnifiedAnalysisEngine {
     
     const suggestions: UnifiedSuggestion[] = [];
     const checkedWords = new Set<string>(); // Prevent duplicate checks for the same word
+    const documentText = doc.textContent;
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[runSpellCheck] Document text length:', documentText.length);
+      console.log('[runSpellCheck] Document preview:', documentText.substring(0, 100) + '...');
+    }
 
     doc.descendants((node: any, pos: number) => {
       if (!node.isText || !node.text) {
@@ -202,14 +229,27 @@ export class UnifiedAnalysisEngine {
         const from = pos + match.index!;
         const to = from + word.length;
         const suggested = spellChecker.suggest(word);
-        const contextSnippet = `${node.text.substring(match.index! - 10, match.index!)}...${node.text.substring(to - pos, to - pos + 10)}`;
-
+        
+        if (process.env.NODE_ENV === 'development') {
+          const actualText = documentText.substring(from, to);
+          console.log('[runSpellCheck] Creating suggestion for:', {
+            word,
+            from,
+            to,
+            pos,
+            matchIndex: match.index,
+            nodeText: node.text.substring(0, 50) + '...',
+            actualTextAtPosition: actualText,
+            matches: word === actualText
+          });
+        }
+        
         suggestions.push(
           createSuggestion(
             from,
             to,
             word,
-            contextSnippet,
+            documentText,
             'spelling',
             SPELLING_SUB_CATEGORY.MISSPELLING,
             SPELLCHECK_RULE_ID,

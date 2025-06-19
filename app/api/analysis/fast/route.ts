@@ -33,6 +33,29 @@ export async function POST(request: Request) {
     const engine = await getEngine();
     const suggestions = engine.runFastChecks(doc);
 
+    console.log('[Fast analysis] Returning suggestions:', {
+      count: suggestions.length,
+      categories: [...new Set(suggestions.map(s => s.category))],
+      suggestions: suggestions.map(s => ({
+        id: s.id,
+        category: s.category,
+        matchText: s.matchText,
+        message: s.message
+      }))
+    });
+
+    // Check what happens when we serialize
+    const serialized = JSON.stringify({ suggestions });
+    const parsed = JSON.parse(serialized);
+    
+    console.log('[Fast API] After JSON serialization:', {
+      firstSuggestion: parsed.suggestions[0] ? {
+        hasMatchText: 'matchText' in parsed.suggestions[0],
+        hasGetPosition: 'getPosition' in parsed.suggestions[0],
+        keys: Object.keys(parsed.suggestions[0]).slice(0, 10)
+      } : null
+    });
+
     return NextResponse.json({ suggestions });
   } catch (error) {
     console.error('Fast analysis API Error:', error);

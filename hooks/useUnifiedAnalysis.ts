@@ -67,12 +67,24 @@ export const useUnifiedAnalysis = (
 
   // Tier 1: Fast Analysis (Grammar, Style, Spelling) - Short debounce
   const debouncedFastAnalysis = useDebouncedCallback(async (currentDoc) => {
+    console.log('[useUnifiedAnalysis] debouncedFastAnalysis called, doc length:', currentDoc?.textContent?.length || 0);
+    
     if (!isReady || !currentDoc || currentDoc.textContent.trim().length < 2) {
       // If the document is too short, clear out all fast-check categories
+      console.log('[useUnifiedAnalysis] Document too short, clearing suggestions');
       updateSuggestions(['grammar', 'style', 'spelling'], []);
       return;
     }
+    
+    console.log('[useUnifiedAnalysis] Sending document for fast analysis:', {
+      docType: currentDoc.type?.name,
+      textContent: currentDoc.textContent,
+      textLength: currentDoc.textContent?.length,
+      preview: currentDoc.textContent.substring(0, 100) + '...'
+    });
+    
     try {
+      console.log('[useUnifiedAnalysis] Fetching fast analysis...');
       const response = await fetch('/api/analysis/fast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,6 +92,20 @@ export const useUnifiedAnalysis = (
       });
       if (!response.ok) throw new Error(`Fast analysis request failed: ${response.status}`);
       const { suggestions } = await response.json();
+      
+      console.log('[useUnifiedAnalysis] Received from fast API:', {
+        count: suggestions?.length || 0,
+        firstSuggestion: suggestions?.[0] ? {
+          id: suggestions[0].id,
+          category: suggestions[0].category,
+          matchText: suggestions[0].matchText,
+          contextBefore: suggestions[0].contextBefore,
+          contextAfter: suggestions[0].contextAfter,
+          hasPosition: !!suggestions[0].position,
+          message: suggestions[0].message
+        } : null
+      });
+      
       updateSuggestions(['grammar', 'style', 'spelling'], suggestions || []);
     } catch (error) {
       console.error('Failed to fetch fast analysis:', error);

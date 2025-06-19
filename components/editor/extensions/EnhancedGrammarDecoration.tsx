@@ -26,7 +26,7 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
   },
   
   addProseMirrorPlugins() {
-    const options = this.options;
+    const { options } = this;
     const pluginKey = new PluginKey('enhancedGrammarDecoration');
     
     return [
@@ -45,31 +45,47 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
               const suggestions = meta.suggestions || [];
               const decorations: Decoration[] = [];
               
+              console.log('[GrammarDecoration] Updating decorations with suggestions:', suggestions.length);
+              
               suggestions.forEach((suggestion: UnifiedSuggestion) => {
-                if (suggestion.position && suggestion.position.start !== undefined) {
+                // Skip SEO suggestions - they don't have text positions
+                if (suggestion.category === 'seo') {
+                  return;
+                }
+                
+                // Legacy position-based suggestions
+                if (suggestion.position) {
+                  const position = { start: suggestion.position.start, end: suggestion.position.end };
+                  
+                  if (position.start < 0 || position.end > tr.doc.content.size) {
+                    console.warn('[GrammarDecoration] Invalid position:', position);
+                    return;
+                  }
+                  
                   try {
-                    const from = suggestion.position.start;
-                    const to = suggestion.position.end || suggestion.position.start + 1;
-                    
-                    // Validate positions
-                    if (from < 0 || to > tr.doc.content.size || from >= to) {
-                      return;
-                    }
-                    
-                    const decoration = Decoration.inline(from, to, {
-                      class: getDecorationClass(suggestion, options.hoveredSuggestionId),
-                      'data-suggestion-id': suggestion.id,
-                      'data-suggestion-category': suggestion.category,
-                      'data-suggestion-severity': suggestion.severity,
-                      title: suggestion.message,
-                    });
-                    
+                    const decoration = Decoration.inline(
+                      position.start,
+                      position.end,
+                      {
+                        class: `suggestion-${suggestion.category} suggestion-${suggestion.severity}`,
+                        'data-suggestion-id': suggestion.id,
+                        'data-category': suggestion.category,
+                        'data-severity': suggestion.severity,
+                        title: suggestion.message,
+                      },
+                      {
+                        inclusiveStart: false,
+                        inclusiveEnd: false,
+                      }
+                    );
                     decorations.push(decoration);
                   } catch (error) {
                     console.warn('Failed to create decoration:', error);
                   }
                 }
               });
+              
+              console.log('[GrammarDecoration] Created decorations:', decorations.length);
               
               return { 
                 decorations: DecorationSet.create(tr.doc, decorations),
@@ -79,6 +95,7 @@ export const EnhancedGrammarDecoration = Extension.create<GrammarDecorationOptio
             
             // Clear decorations if requested
             if (tr.getMeta('clearSuggestions')) {
+              console.log('[GrammarDecoration] Clearing all decorations');
               return { decorations: DecorationSet.empty, suggestions: [] };
             }
             
@@ -155,18 +172,4 @@ export function clearSuggestions(editor: Editor) {
       return true;
     })
     .run();
-}
-
-// Get decoration class based on category and hover state
-function getDecorationClass(suggestion: UnifiedSuggestion, hoveredId: string | null): string {
-  // Use the new, simplified class structure
-  const categoryClass = `suggestion-${suggestion.category}`;
-  const isHovered = suggestion.id === hoveredId;
-
-  let finalClass = categoryClass;
-  if (isHovered) {
-    finalClass += ' bg-muted';
-  }
-
-  return finalClass;
 }

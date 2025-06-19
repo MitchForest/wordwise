@@ -19,6 +19,14 @@ export type SpellingSubCategory = typeof SPELLING_SUB_CATEGORY[keyof typeof SPEL
 
 export const GRAMMAR_SUB_CATEGORY = {
   REPEATED_WORD: 'repeated-word',
+  CAPITALIZATION: 'capitalization',
+  PUNCTUATION: 'punctuation',
+  SPACING: 'spacing',
+  CONTRACTION: 'contraction',
+  COMMON_CONFUSION: 'common-confusion',
+  ARTICLE_USAGE: 'article-usage',
+  SUBJECT_VERB_AGREEMENT: 'subject-verb-agreement',
+  COMMON_MISSPELLING: 'common-misspelling'
 } as const;
 export type GrammarSubCategory = typeof GRAMMAR_SUB_CATEGORY[keyof typeof GRAMMAR_SUB_CATEGORY];
 
@@ -69,18 +77,13 @@ export interface UnifiedSuggestion {
   title: string;
   message: string;
   
+  // The actual text that triggered the suggestion (for position tracking)
+  matchText?: string;
+  
   // Position in document (for highlighting)
   position?: {
     start: number;
     end: number;
-  };
-  
-  // Context for the suggestion (text around the error)
-  context?: {
-    text: string; // The actual error text
-    length?: number; // Length of the error
-    before?: string; // Text before the error
-    after?: string; // Text after the error
   };
   
   // Related metrics
@@ -100,6 +103,19 @@ export interface UnifiedSuggestion {
     type: 'rewrite' | 'simplify' | 'expand' | 'generate';
     requiresAI: true;
   }>;
+
+  context: SuggestionContext;
+  originalText?: string; // The actual error text (for short matches)
+  originalFrom?: number; // Original position when created
+  originalTo?: number; // Original end position when created
+}
+
+// Define SuggestionContext type
+export interface SuggestionContext {
+  text: string; // The actual error text
+  length?: number; // Length of the error
+  before?: string; // Text before the error
+  after?: string; // Text after the error
 }
 
 // ---- Legacy Analysis Result Types ----

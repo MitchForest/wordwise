@@ -135,7 +135,7 @@ function tryContextMapping(
 /**
  * Convert a plain text index to ProseMirror position
  */
-function plainTextIndexToProseMirror(editor: Editor, plainIndex: number): number {
+export function plainTextIndexToProseMirror(editor: Editor, plainIndex: number): number {
   let currentIndex = 0;
   let proseMirrorPos = 0;
 

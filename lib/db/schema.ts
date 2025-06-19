@@ -47,6 +47,31 @@ export const verification = pgTable('verification', {
   updatedAt: timestamp('updatedAt'),
 })
 
+// Publishing Integrations
+export const publishingIntegrations = pgTable('publishing_integrations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  platformId: text('platform_id').notNull(), // 'wordpress', 'medium', etc.
+  name: text('name').notNull(), // e.g., "My Personal Blog"
+  credentials: jsonb('credentials').notNull(), // Encrypted credentials
+  isActive: boolean('is_active').default(true),
+  lastUsed: timestamp('last_used'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const publishedPosts = pgTable('published_posts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  documentId: uuid('document_id').notNull().references(() => documents.id, { onDelete: 'cascade' }),
+  integrationId: uuid('integration_id').notNull().references(() => publishingIntegrations.id, { onDelete: 'cascade' }),
+  platformPostId: text('platform_post_id').notNull(),
+  postUrl: text('post_url'),
+  publishedAt: timestamp('published_at').defaultNow(),
+  lastSyncedAt: timestamp('last_synced_at'),
+  status: text('status'), // 'published', 'draft', 'scheduled'
+  metadata: jsonb('metadata'), // Platform-specific data
+});
+
 // Phase 1: Documents table for blog editor
 export const documents = pgTable('documents', {
   // Core fields

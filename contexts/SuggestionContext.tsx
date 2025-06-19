@@ -4,6 +4,7 @@
  * `useUnifiedAnalysis` hook (which produces suggestions and metrics) and the various UI
  * components that display them (like `EnhancedSuggestionsPanel` and `EditorStatusBar`).
  * It also manages the filter state for the suggestions list.
+ * @modified 2024-12-28 - Added text-based suggestion cleanup
  */
 'use client';
 
@@ -13,6 +14,7 @@ import type { DocumentMetrics } from '@/services/analysis/engine';
 
 interface EditorActions {
   apply: (suggestionId: string, value: string) => void;
+  getDocumentText?: () => string; // NEW: for text-based cleanup
 }
 
 interface SuggestionFilter {
@@ -34,6 +36,7 @@ interface SuggestionContextType {
   applySuggestion: (suggestionId: string, value: string) => void;
   ignoreSuggestion: (suggestionId: string) => void;
   updateSuggestions: (categories: string[], newSuggestionsFromServer: UnifiedSuggestion[]) => void;
+  getSuggestions: () => UnifiedSuggestion[];
 }
 
 const SuggestionContext = createContext<SuggestionContextType | undefined>(undefined);
@@ -48,6 +51,7 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
   const [reconciliationActive, setReconciliationActive] = useState(false);
   const pendingSuggestions = useRef<UnifiedSuggestion[]>([]);
   const reconciliationTimer = useRef<NodeJS.Timeout | null>(null);
+  const suggestionsRef = useRef<UnifiedSuggestion[]>([]);
 
   const setMetrics = useCallback((newMetrics: Partial<DocumentMetrics> | null) => {
     if (newMetrics === null) {
@@ -68,40 +72,67 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [reconciliationActive]);
 
+  useEffect(() => {
+    suggestionsRef.current = suggestions;
+  }, [suggestions]);
+
+  const getSuggestions = useCallback(() => {
+    return suggestionsRef.current;
+  }, []);
+
   const updateSuggestions = useCallback(
     (categories: string[], newSuggestionsFromServer: UnifiedSuggestion[]) => {
+      console.log('[SuggestionContext] Received suggestions from server:', {
+        categories,
+        count: newSuggestionsFromServer.length,
+        suggestions: newSuggestionsFromServer.map(s => ({
+          id: s.id,
+          category: s.category,
+          matchText: s.matchText,
+          position: s.position,
+          message: s.message
+        }))
+      });
+      
       setSuggestions(prevSuggestions => {
-        const newSuggestionsMap = new Map(newSuggestionsFromServer.map(s => [s.id, s]));
-        const intermediateList: UnifiedSuggestion[] = [];
-        const updatedSuggestionIds = new Set<string>();
+        // Get current document text if available
+        const documentText = editorActions?.getDocumentText?.() || '';
+        
+        console.log('[SuggestionContext] Document text:', {
+          hasText: !!documentText,
+          length: documentText.length,
+          preview: documentText.substring(0, 100) + '...',
+          editorReady: !!editorActions
+        });
+        
+        // Filter existing suggestions by categories that are NOT being updated
+        // This ensures we don't keep stale suggestions from categories being refreshed
+        const categoriesSet = new Set(categories);
+        const retainedSuggestions = prevSuggestions.filter(s => !categoriesSet.has(s.category));
+        
+        // Combine retained suggestions with new ones
+        const combinedSuggestions = [...retainedSuggestions, ...newSuggestionsFromServer];
+        
+        // De-duplicate by ID
+        const uniqueMap = new Map<string, UnifiedSuggestion>();
+        combinedSuggestions.forEach(s => uniqueMap.set(s.id, s));
+        const finalList = Array.from(uniqueMap.values());
+        
+        console.log('[SuggestionContext] Updated suggestions:', {
+          previous: prevSuggestions.length,
+          new: newSuggestionsFromServer.length,
+          retained: retainedSuggestions.length,
+          final: finalList.length,
+          byCategory: finalList.reduce((acc, s) => {
+            acc[s.category] = (acc[s.category] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>)
+        });
 
-        // Iterate through the previous list to build the new list, preserving order.
-        for (const prev of prevSuggestions) {
-          if (categories.includes(prev.category)) {
-            const updated = newSuggestionsMap.get(prev.id);
-            if (updated) {
-              intermediateList.push(updated);
-              updatedSuggestionIds.add(updated.id);
-            }
-          } else {
-            intermediateList.push(prev);
-          }
-        }
-
-        // A truly new suggestion is one from the server that we didn't just use as an update.
-        const trulyNewSuggestions = newSuggestionsFromServer.filter(s => !updatedSuggestionIds.has(s.id));
-
-        if (reconciliationActive) {
-          if (trulyNewSuggestions.length > 0) {
-            pendingSuggestions.current.push(...trulyNewSuggestions);
-          }
-          return intermediateList;
-        } else {
-          return [...intermediateList, ...trulyNewSuggestions];
-        }
+        return finalList;
       });
     },
-    [reconciliationActive],
+    [editorActions],
   );
 
   const registerEditorActions = useCallback((actions: EditorActions) => {
@@ -157,6 +188,7 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
         applySuggestion,
         ignoreSuggestion,
         updateSuggestions,
+        getSuggestions,
       }}
     >
       {children}

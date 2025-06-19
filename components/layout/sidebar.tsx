@@ -594,6 +594,7 @@ function UserDropdown({
   };
   onSignOut: () => void;
 }) {
+  const router = useRouter();
   const userButtonRef = useRef<HTMLButtonElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const [userMenuPosition, setUserMenuPosition] = useState({ top: 0, left: 0 });
@@ -706,8 +707,7 @@ function UserDropdown({
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowUserMenu(false);
-                  // Settings logic here
-                  console.log('Settings clicked');
+                  router.push('/settings');
                 }}
                 className="w-full px-4 py-2 text-sm hover:bg-neutral-50 text-left transition-colors flex items-center gap-3"
               >

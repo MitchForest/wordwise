@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/core'
-import { createSuggestion } from '@/lib/editor/suggestion-factory'
+import { createDocumentSuggestion } from '@/lib/editor/suggestion-factory'
 import { UnifiedSuggestion, SEO_SUB_CATEGORY, SEOSubCategory } from '@/types/suggestions'
 
 // Canonical Rule IDs for SEO checks. This ensures stable suggestion IDs.
@@ -106,10 +106,10 @@ export class SEOAnalyzer {
   }
 
   private addSuggestion(message: string, subCategory: SEOSubCategory, ruleId: string) {
-    // SEO suggestions are document-wide. We use a fixed string for the `originalText`
-    // part of the hash to ensure the ID is stable for the entire document.
+    // SEO suggestions are document-wide. By passing `undefined` for the position,
+    // we ensure they will be sorted to the bottom of the suggestions list.
     this.suggestions.push(
-      createSuggestion(0, 1, '_document_', '', 'seo', subCategory, ruleId, 'SEO Suggestion', message, [], 'suggestion'),
+      createDocumentSuggestion('seo', subCategory, ruleId, 'SEO Suggestion', message, [], 'suggestion'),
     )
   }
 
@@ -140,8 +140,6 @@ export class SEOAnalyzer {
         )
         score -= 40
       } else if (title.toLowerCase().indexOf(targetKeyword.toLowerCase()) > title.length / 2) {
-        // This is more of a style/best-practice suggestion, less of a hard error.
-        // We'll create a new sub-category for this if it becomes necessary. For now, we omit a specific suggestion.
         score -= 10
       }
     }
@@ -226,7 +224,7 @@ export class SEOAnalyzer {
           SEO_RULE.INVALID_HEADING_SEQUENCE,
         )
         score -= 15
-        break // Only report the first hierarchy issue.
+        break 
       }
       lastLevel = heading.level
     }
@@ -248,71 +246,61 @@ export class SEOAnalyzer {
 
   private analyzeContent(plainText: string, wordCount: number, numHeadings: number): number {
     let score = 100
-
     if (wordCount < 300) {
       this.addSuggestion(
-        `Content is too short (${wordCount} words). Aim for at least 300 words for better ranking potential.`,
+        `Content is too short. Aim for at least 300 words (currently ${wordCount}).`,
         SEO_SUB_CATEGORY.CONTENT_TOO_SHORT,
         SEO_RULE.CONTENT_TOO_SHORT,
       )
-      score -= 40
+      score -= 30
     }
 
-    const paragraphs = plainText.split('\n\n').filter((p) => p.trim().length > 0)
-    const longParagraphs = paragraphs.filter((p) => p.split(/\s+/).length > 150)
-    if (longParagraphs.length > 0) {
-      // This is a stylistic suggestion, currently no sub-category for it.
-      // this.addSuggestion(`Break up long paragraphs. At least ${longParagraphs.length} paragraph(s) are over 150 words.`)
-      score -= 10
-    }
-
-    if (wordCount > 300 && numHeadings < 2) {
-      // This is a stylistic suggestion, currently no sub-category for it.
-      // this.addSuggestion('Add more subheadings to break up the text and improve readability.')
+    if (numHeadings > 0 && wordCount / numHeadings > 250) {
+      this.addSuggestion(
+        'Consider breaking up long sections of text with more subheadings.',
+        SEO_SUB_CATEGORY.INVALID_HEADING_SEQUENCE,
+        SEO_RULE.INVALID_HEADING_SEQUENCE,
+      )
       score -= 10
     }
     return Math.max(0, score)
   }
 
   private checkKeywordDensity(plainText: string, wordCount: number, targetKeyword?: string): number {
-    if (!targetKeyword || wordCount === 0) return 100
+    if (!targetKeyword || wordCount === 0) {
+      return 100
+    }
+
+    const keywordRegex = new RegExp(`\\b${targetKeyword.toLowerCase()}\\b`, 'g')
+    const matches = plainText.toLowerCase().match(keywordRegex)
+    const count = matches ? matches.length : 0
+    const density = (count / wordCount) * 100
+
     let score = 100
-
-    const keywordRegex = new RegExp(`\\b${targetKeyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi')
-    const matches = plainText.match(keywordRegex) || []
-    const density = (matches.length / wordCount) * 100
-
-    if (density === 0) {
+    if (density < 0.5) {
       this.addSuggestion(
-        'Target keyword was not found in the content.',
+        `Target keyword density is low (${density.toFixed(2)}%). Aim for 0.5% to 2%.`,
         SEO_SUB_CATEGORY.KEYWORD_DENSITY_LOW,
         SEO_RULE.KEYWORD_DENSITY_LOW,
       )
-      return 0
-    } else if (density < 0.5) {
-      this.addSuggestion(
-        `Keyword density is too low (${density.toFixed(1)}%). Aim for 0.5% to 2%.`,
-        SEO_SUB_CATEGORY.KEYWORD_DENSITY_LOW,
-        SEO_RULE.KEYWORD_DENSITY_LOW,
-      )
-      score -= 40
+      score -= 25
     } else if (density > 2.5) {
       this.addSuggestion(
-        `Keyword density is too high (${density.toFixed(1)}%), which can be seen as keyword stuffing. Aim for under 2.5%.`,
+        `Keyword density is high (${density.toFixed(2)}%). This can be seen as "keyword stuffing".`,
         SEO_SUB_CATEGORY.KEYWORD_DENSITY_HIGH,
         SEO_RULE.KEYWORD_DENSITY_HIGH,
       )
-      score -= 50
+      score -= 30
     }
 
-    const firstParagraph = plainText.split('\n\n')[0]
+    const firstParagraph = plainText.substring(0, plainText.indexOf('\n\n') > -1 ? plainText.indexOf('\n\n') : plainText.length)
     if (!firstParagraph.toLowerCase().includes(targetKeyword.toLowerCase())) {
       this.addSuggestion(
-        'Target keyword does not appear in the first paragraph.',
+        'Include the target keyword within the first paragraph.',
         SEO_SUB_CATEGORY.NO_KEYWORD_IN_FIRST_PARAGRAPH,
         SEO_RULE.NO_KEYWORD_IN_FIRST_PARAGRAPH,
       )
-      score -= 20
+      score -= 15
     }
 
     return Math.max(0, score)
