@@ -232,8 +232,8 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
 
   const { saveState, lastSaved, handleContentChange, handleTitleChange, handleMetaChange } = useAutoSave(editor, documentId);
 
-  // Call our new analysis hook
-  const { runRealtimeSpellCheck, debouncedFastAnalysis, runSEOAnalysis } = useUnifiedAnalysis(
+  // Call our unified analysis hook (now uses retext for instant feedback)
+  const { runRealtimeSpellCheck, runSEOAnalysis } = useUnifiedAnalysis(
     editor?.state.doc || null, 
     editor?.isEditable || false, 
     {
@@ -307,7 +307,11 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
       const plainText = editor.getText();
       handleContentChange(content, plainText);
 
-      // Real-time spell check logic
+      // NOTE: Real-time analysis is now handled automatically by retext in useUnifiedAnalysis
+      // No need for manual triggers - retext provides instant feedback for spell/grammar/style
+      // The old logic that triggered fast analysis on sentence end is no longer needed
+      
+      // Real-time spell check logic (kept for backward compatibility, but retext handles this)
       const { from, empty } = editor.state.selection;
       if (empty && from > 1) {
         const textBefore = editor.state.doc.textBetween(0, from, "\n", " ");
@@ -317,10 +321,8 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
           if (lastWord && lastWord.length > 2) {
             runRealtimeSpellCheck(lastWord, editor.state.doc);
           }
-        } else if (/[.!?]/.test(lastChar)) { // Fired on sentence end
-          // Trigger fast analysis for the whole document
-          debouncedFastAnalysis(editor.state.doc);
         }
+        // Removed: Fast analysis trigger on sentence end - retext handles this automatically
       }
     };
 
@@ -328,7 +330,7 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
     return () => {
       editor.off('update', handleUpdate);
     };
-  }, [editor, handleContentChange, runRealtimeSpellCheck, debouncedFastAnalysis]);
+  }, [editor, handleContentChange, runRealtimeSpellCheck]);
 
   // Handle title changes
   const onTitleChange = (newTitle: string) => {

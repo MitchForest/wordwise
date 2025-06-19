@@ -3,8 +3,9 @@
  * @purpose This context acts as the central hub for sharing analysis results between the
  * `useUnifiedAnalysis` hook (which produces suggestions and metrics) and the various UI
  * components that display them (like `EnhancedSuggestionsPanel` and `EditorStatusBar`).
- * It also manages the filter state for the suggestions list.
- * @modified 2024-12-28 - Added text-based suggestion cleanup
+ * It also manages the filter state for the suggestions list and handles the reconciliation
+ * window for smooth UX during document edits.
+ * @modified 2024-12-28 - Enhanced reconciliation window for retext architecture
  */
 'use client';
 
@@ -28,6 +29,7 @@ interface SuggestionContextType {
   filter: SuggestionFilter;
   hoveredSuggestionId: string | null;
   focusedSuggestionId: string | null;
+  isReconciliationActive: boolean;
   setMetrics: (metrics: Partial<DocumentMetrics> | null) => void;
   setFilter: (filter: SuggestionFilter) => void;
   setHoveredSuggestionId: (id: string | null) => void;
@@ -36,6 +38,7 @@ interface SuggestionContextType {
   applySuggestion: (suggestionId: string, value: string) => void;
   ignoreSuggestion: (suggestionId: string) => void;
   updateSuggestions: (categories: string[], newSuggestionsFromServer: UnifiedSuggestion[]) => void;
+  queueSuggestionsForReconciliation: (suggestions: UnifiedSuggestion[]) => void;
   getSuggestions: () => UnifiedSuggestion[];
 }
 
@@ -52,6 +55,7 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
   const pendingSuggestions = useRef<UnifiedSuggestion[]>([]);
   const reconciliationTimer = useRef<NodeJS.Timeout | null>(null);
   const suggestionsRef = useRef<UnifiedSuggestion[]>([]);
+  const pendingUpdateTimer = useRef<NodeJS.Timeout | null>(null);
 
   const setMetrics = useCallback((newMetrics: Partial<DocumentMetrics> | null) => {
     if (newMetrics === null) {
@@ -64,10 +68,17 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
     } as DocumentMetrics));
   }, []);
 
+  // Enhanced reconciliation window handling
   useEffect(() => {
     // When the reconciliation window closes, add any pending suggestions.
     if (!reconciliationActive && pendingSuggestions.current.length > 0) {
-      setSuggestions(prev => [...prev, ...pendingSuggestions.current]);
+      console.log('[SuggestionContext] Reconciliation window closed, adding pending suggestions:', pendingSuggestions.current.length);
+      setSuggestions(prev => {
+        // Deduplicate by ID when adding pending suggestions
+        const existingIds = new Set(prev.map(s => s.id));
+        const newSuggestions = pendingSuggestions.current.filter(s => !existingIds.has(s.id));
+        return [...prev, ...newSuggestions];
+      });
       pendingSuggestions.current = [];
     }
   }, [reconciliationActive]);
@@ -80,11 +91,30 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
     return suggestionsRef.current;
   }, []);
 
+  // Queue suggestions during reconciliation window
+  const queueSuggestionsForReconciliation = useCallback((newSuggestions: UnifiedSuggestion[]) => {
+    if (reconciliationActive) {
+      console.log('[SuggestionContext] Reconciliation active, queuing suggestions:', newSuggestions.length);
+      // Add to pending queue, avoiding duplicates
+      const existingPendingIds = new Set(pendingSuggestions.current.map(s => s.id));
+      const uniqueNewSuggestions = newSuggestions.filter(s => !existingPendingIds.has(s.id));
+      pendingSuggestions.current = [...pendingSuggestions.current, ...uniqueNewSuggestions];
+    } else {
+      // Immediately add if not in reconciliation
+      setSuggestions(prev => {
+        const existingIds = new Set(prev.map(s => s.id));
+        const uniqueNewSuggestions = newSuggestions.filter(s => !existingIds.has(s.id));
+        return [...prev, ...uniqueNewSuggestions];
+      });
+    }
+  }, [reconciliationActive]);
+
   const updateSuggestions = useCallback(
     (categories: string[], newSuggestionsFromServer: UnifiedSuggestion[]) => {
-      console.log('[SuggestionContext] Received suggestions from server:', {
+      console.log('[SuggestionContext] Received suggestions:', {
         categories,
         count: newSuggestionsFromServer.length,
+        reconciliationActive,
         suggestions: newSuggestionsFromServer.map(s => ({
           id: s.id,
           category: s.category,
@@ -93,6 +123,18 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
           message: s.message
         }))
       });
+      
+      // If reconciliation is active, queue the suggestions
+      if (reconciliationActive) {
+        // Clear any pending timer for delayed updates
+        if (pendingUpdateTimer.current) {
+          clearTimeout(pendingUpdateTimer.current);
+        }
+        
+        // Queue these suggestions for later
+        queueSuggestionsForReconciliation(newSuggestionsFromServer);
+        return;
+      }
       
       setSuggestions(prevSuggestions => {
         // Get current document text if available
@@ -132,7 +174,7 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
         return finalList;
       });
     },
-    [editorActions],
+    [editorActions, reconciliationActive, queueSuggestionsForReconciliation],
   );
 
   const registerEditorActions = useCallback((actions: EditorActions) => {
@@ -145,7 +187,8 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
         editorActions.apply(suggestionId, value);
         setSuggestions(prev => prev.filter(s => s.id !== suggestionId));
 
-        // Open the reconciliation window.
+        // Open the reconciliation window to prevent jarring updates
+        console.log('[SuggestionContext] Opening reconciliation window for 3 seconds');
         setReconciliationActive(true);
 
         if (reconciliationTimer.current) {
@@ -153,6 +196,7 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
         }
 
         reconciliationTimer.current = setTimeout(() => {
+          console.log('[SuggestionContext] Closing reconciliation window');
           setReconciliationActive(false);
           reconciliationTimer.current = null;
         }, 3000); // Reconciliation window is 3 seconds long.
@@ -205,6 +249,7 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
         filter,
         hoveredSuggestionId,
         focusedSuggestionId,
+        isReconciliationActive: reconciliationActive,
         setMetrics,
         setFilter,
         setHoveredSuggestionId,
@@ -213,6 +258,7 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
         applySuggestion,
         ignoreSuggestion,
         updateSuggestions,
+        queueSuggestionsForReconciliation,
         getSuggestions,
       }}
     >

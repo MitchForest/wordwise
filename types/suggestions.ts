@@ -6,7 +6,7 @@ export interface SuggestionAction {
   handler: () => void | Promise<void>;
 }
 
-export type SuggestionCategory = 'spelling' | 'grammar' | 'style' | 'seo';
+export type SuggestionCategory = 'spelling' | 'grammar' | 'style' | 'seo' | 'readability';
 
 // --- Canonical Sub-Categories ---
 // This is the single source of truth for all suggestion types.

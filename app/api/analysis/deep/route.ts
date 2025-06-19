@@ -23,14 +23,14 @@ async function getEngine() {
 
 export async function POST(request: Request) {
   try {
-    const { doc: jsonDoc, documentMetadata, enableSEOChecks = true } = await request.json();
+    const { doc: jsonDoc, documentMetadata, enableSEOChecks = true, skipBasicChecks = true } = await request.json();
 
     if (!jsonDoc || !documentMetadata) {
       return NextResponse.json({ error: 'Missing document content or metadata' }, { status: 400 });
     }
 
     // --- Caching Logic ---
-    const contentHash = createHash('sha256').update(JSON.stringify({ jsonDoc, documentMetadata, enableSEOChecks })).digest('hex');
+    const contentHash = createHash('sha256').update(JSON.stringify({ jsonDoc, documentMetadata, enableSEOChecks, skipBasicChecks })).digest('hex');
     const cachedResult = await analysisCache.getAsync(contentHash);
     if (cachedResult) {
       return NextResponse.json(cachedResult);
@@ -41,12 +41,37 @@ export async function POST(request: Request) {
     const doc = schema.nodeFromJSON(jsonDoc);
 
     const engine = await getEngine();
-    const { metrics, suggestions } = await engine.runDeepChecks(doc, documentMetadata);
+    
+    // Skip basic checks if client is handling them (retext migration)
+    if (skipBasicChecks) {
+      // Only run SEO and metrics - basic checks handled by retext client-side
+      const { metrics, suggestions } = await engine.runDeepChecks(doc, documentMetadata);
+      
+      // Filter to only SEO/readability if basic checks are client-side
+      const filteredSuggestions = suggestions.filter(s => 
+        s.category === 'seo' || s.category === 'readability'
+      );
+      
+      const result = { 
+        suggestions: enableSEOChecks ? filteredSuggestions : [],
+        metrics 
+      };
 
+      // --- Caching Logic ---
+      analysisCache.set(contentHash, result, 3600); // Cache for 1 hour
+      // --- End Caching Logic ---
+
+      return NextResponse.json(result);
+    }
+    
+    // Fallback path when client-side analysis fails
+    const fallbackSuggestions = await engine.runFallbackAnalysis(doc);
+    const { metrics, suggestions } = await engine.runDeepChecks(doc, documentMetadata);
+    
     // Filter out SEO suggestions if not enabled
     const filteredSuggestions = enableSEOChecks 
-      ? suggestions 
-      : suggestions.filter(s => s.category !== 'seo');
+      ? [...fallbackSuggestions, ...suggestions]
+      : [...fallbackSuggestions, ...suggestions.filter(s => s.category !== 'seo')];
 
     const result = { 
       suggestions: filteredSuggestions, 

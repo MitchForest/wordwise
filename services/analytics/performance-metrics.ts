@@ -1,6 +1,6 @@
 /**
  * @file services/analytics/performance-metrics.ts
- * @purpose Track and report performance metrics for the retext migration
+ * @purpose Track analysis performance for production monitoring
  * @created 2024-12-28
  */
 
@@ -8,74 +8,46 @@ export class PerformanceMetrics {
   private static metrics: Map<string, number[]> = new Map();
   
   /**
-   * @purpose Track analysis time for performance monitoring
-   * @param source - Source of analysis (retext or server)
-   * @param duration - Time taken in milliseconds
-   * @param suggestionCount - Number of suggestions found
+   * Track analysis performance
    */
   static trackAnalysisTime(source: 'retext' | 'server', duration: number, suggestionCount: number) {
-    const key = `${source}_analysis`;
-    
-    if (!this.metrics.has(key)) {
-      this.metrics.set(key, []);
-    }
-    
-    this.metrics.get(key)!.push(duration);
-    
-    // Keep only last 100 measurements
-    if (this.metrics.get(key)!.length > 100) {
-      this.metrics.get(key)!.shift();
-    }
-    
-    console.log(`[Performance] ${source}: ${duration.toFixed(2)}ms for ${suggestionCount} suggestions`);
-    
-    // Send to analytics if available
-    if (typeof window !== 'undefined' && (window as any).gtag) {
-      (window as any).gtag('event', 'analysis_performance', {
-        event_category: 'Retext Migration',
-        source,
-        duration: Math.round(duration),
-        suggestion_count: suggestionCount,
-        suggestions_per_ms: suggestionCount / duration
-      });
+    // Only track retext performance now (server is just SEO/fallback)
+    if (source === 'retext') {
+      const key = 'retext_analysis';
+      
+      if (!this.metrics.has(key)) {
+        this.metrics.set(key, []);
+      }
+      
+      this.metrics.get(key)!.push(duration);
+      
+      // Keep only last 50 measurements for memory efficiency
+      if (this.metrics.get(key)!.length > 50) {
+        this.metrics.get(key)!.shift();
+      }
+      
+      // Log slow analysis (>100ms is concerning for retext)
+      if (duration > 100) {
+        console.warn(`[Performance] Slow retext analysis: ${duration.toFixed(2)}ms for ${suggestionCount} suggestions`);
+      }
     }
   }
   
   /**
-   * @purpose Get average analysis time for a source
-   * @param source - Source to get average for
-   * @returns Average time in milliseconds
+   * Get average retext analysis time
    */
-  static getAverageTime(source: 'retext' | 'server'): number {
-    const key = `${source}_analysis`;
-    const times = this.metrics.get(key) || [];
-    
-    if (times.length === 0) return 0;
-    
-    return times.reduce((a, b) => a + b, 0) / times.length;
+  static getAverageTime(): number {
+    const times = this.metrics.get('retext_analysis') || [];
+    return times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : 0;
   }
   
   /**
-   * @purpose Log performance summary to console
+   * Log performance summary
    */
   static logSummary() {
-    console.log('[Performance Summary]');
-    console.log(`Retext average: ${this.getAverageTime('retext').toFixed(2)}ms`);
-    console.log(`Server average: ${this.getAverageTime('server').toFixed(2)}ms`);
-    
-    const retextAvg = this.getAverageTime('retext');
-    const serverAvg = this.getAverageTime('server');
-    
-    if (retextAvg > 0 && serverAvg > 0) {
-      const improvement = ((serverAvg - retextAvg) / serverAvg * 100).toFixed(1);
-      console.log(`Performance improvement: ${improvement}%`);
+    const avg = this.getAverageTime();
+    if (avg > 0) {
+      console.log(`[Performance] Retext average: ${avg.toFixed(2)}ms`);
     }
-  }
-  
-  /**
-   * @purpose Reset all metrics
-   */
-  static reset() {
-    this.metrics.clear();
   }
 } 
