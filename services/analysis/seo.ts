@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/core'
-import { createDocumentSuggestion } from '@/lib/editor/suggestion-factory'
+import { createDocumentSuggestion, createSuggestion } from '@/lib/editor/suggestion-factory'
 import { UnifiedSuggestion, SEO_SUB_CATEGORY, SEOSubCategory } from '@/types/suggestions'
 
 // Canonical Rule IDs for SEO checks. This ensures stable suggestion IDs.
@@ -22,39 +22,72 @@ const SEO_RULE = {
   HEADING_MISSING_KEYWORD: 'seo/heading-missing-keyword',
 } as const;
 
+interface HeadingWithPosition {
+  level: number;
+  text: string;
+  position: { from: number; to: number };
+}
+
 /**
- * @purpose Extracts all heading nodes from Tiptap JSON content.
+ * @purpose Extracts all heading nodes from Tiptap JSON content with positions.
  * @param content Tiptap JSON content.
- * @returns An array of headings with their level and text content.
+ * @returns An array of headings with their level, text content, and position.
  */
-function extractHeadings(content: JSONContent): { level: number; text: string }[] {
-  const headings: { level: number; text: string }[] = []
+function extractHeadingsWithPositions(content: JSONContent): HeadingWithPosition[] {
+  const headings: HeadingWithPosition[] = []
   if (!content || !content.content) {
     return headings
   }
 
+  // Track position as we traverse
+  let currentPos = 0
+
   function traverse(node: JSONContent) {
     if (node.type === 'heading' && node.attrs) {
+      const headingStart = currentPos
       let text = ''
+      
       if (node.content) {
-        // Concatenate text from all child text nodes.
+        // Concatenate text from all child text nodes
         node.content.forEach((child) => {
           if (child.type === 'text') {
             text += child.text || ''
           }
         })
       }
+      
+      const headingEnd = headingStart + text.length
+      
       headings.push({
         level: node.attrs.level,
         text,
+        position: { from: headingStart, to: headingEnd }
       })
     }
-    if (node.content) {
+    
+    // Update position based on node content
+    if (node.type === 'text' && node.text) {
+      currentPos += node.text.length
+    } else if (node.content) {
+      // Traverse child nodes
       node.content.forEach(traverse)
+    } else if (node.type === 'paragraph' || node.type === 'heading') {
+      // Add 1 for block node boundaries
+      currentPos += 1
     }
   }
 
-  traverse(content)
+  // Start traversal
+  if (content.content) {
+    content.content.forEach((node, index) => {
+      if (index > 0) {
+        // Add 1 for node boundaries between top-level nodes
+        currentPos += 1
+      }
+      traverse(node)
+    })
+  }
+
   return headings
 }
 
@@ -62,6 +95,7 @@ function extractHeadings(content: JSONContent): { level: number; text: string }[
  * @purpose Analyzes document for SEO best practices.
  * @class SEOAnalyzer
  * @date 2024-07-29 - Initial implementation based on user docs.
+ * @modified 2024-12-28 - Added position tracking for heading-related issues
  */
 export class SEOAnalyzer {
   private suggestions: UnifiedSuggestion[] = []
@@ -84,8 +118,8 @@ export class SEOAnalyzer {
     // Run all checks and collect their weighted scores
     const titleScore = this.checkTitle(title, targetKeyword)
     const metaScore = this.checkMetaDescription(metaDescription, targetKeyword)
-    const headings = extractHeadings(content)
-    const headingScore = this.analyzeHeadings(headings, targetKeyword)
+    const headings = extractHeadingsWithPositions(content)
+    const headingScore = this.analyzeHeadings(headings, plainText, targetKeyword)
     const wordCount = plainText.split(/\s+/).filter(Boolean).length
     const contentScore = this.analyzeContent(plainText, wordCount, headings.length)
     const keywordScore = this.checkKeywordDensity(plainText, wordCount, targetKeyword)
@@ -110,6 +144,32 @@ export class SEOAnalyzer {
     // we ensure they will be sorted to the bottom of the suggestions list.
     this.suggestions.push(
       createDocumentSuggestion('seo', subCategory, ruleId, 'SEO Suggestion', message, [], 'suggestion'),
+    )
+  }
+
+  private addPositionedSuggestion(
+    from: number,
+    to: number,
+    originalText: string,
+    documentText: string,
+    message: string,
+    subCategory: SEOSubCategory,
+    ruleId: string
+  ) {
+    this.suggestions.push(
+      createSuggestion(
+        from,
+        to,
+        originalText,
+        documentText,
+        'seo',
+        subCategory,
+        ruleId,
+        'SEO Suggestion',
+        message,
+        [],
+        'suggestion'
+      )
     )
   }
 
@@ -195,30 +255,46 @@ export class SEOAnalyzer {
     return Math.max(0, score)
   }
 
-  private analyzeHeadings(headings: { level: number; text: string }[], targetKeyword?: string): number {
+  private analyzeHeadings(headings: HeadingWithPosition[], plainText: string, targetKeyword?: string): number {
     let score = 100
     const h1s = headings.filter((h) => h.level === 1)
 
     if (h1s.length === 0) {
-      this.addSuggestion(
+      // For missing H1, suggest adding it at the beginning of the document
+      this.addPositionedSuggestion(
+        0,
+        0,
+        '',
+        plainText,
         'The document is missing an H1 tag. Every page should have exactly one H1.',
         SEO_SUB_CATEGORY.NO_H1,
         SEO_RULE.NO_H1,
       )
       score -= 40
     } else if (h1s.length > 1) {
-      this.addSuggestion(
-        `There are ${h1s.length} H1 tags. You should only use one H1 per page.`,
-        SEO_SUB_CATEGORY.MULTIPLE_H1S,
-        SEO_RULE.MULTIPLE_H1S,
-      )
+      // For multiple H1s, highlight each one
+      h1s.forEach((h1, index) => {
+        this.addPositionedSuggestion(
+          h1.position.from,
+          h1.position.to,
+          h1.text,
+          plainText,
+          `H1 #${index + 1} of ${h1s.length}. You should only use one H1 per page.`,
+          SEO_SUB_CATEGORY.MULTIPLE_H1S,
+          SEO_RULE.MULTIPLE_H1S,
+        )
+      })
       score -= 30
     }
 
     let lastLevel = 0
     for (const heading of headings) {
       if (heading.level > lastLevel + 1) {
-        this.addSuggestion(
+        this.addPositionedSuggestion(
+          heading.position.from,
+          heading.position.to,
+          heading.text,
+          plainText,
           `Heading structure is illogical. A H${heading.level} appears after a H${lastLevel}.`,
           SEO_SUB_CATEGORY.INVALID_HEADING_SEQUENCE,
           SEO_RULE.INVALID_HEADING_SEQUENCE,
@@ -229,10 +305,19 @@ export class SEOAnalyzer {
       lastLevel = heading.level
     }
 
-    if (targetKeyword) {
-      const keywordInHeading = headings.some((h) => h.text.toLowerCase().includes(targetKeyword.toLowerCase()))
-      if (!keywordInHeading) {
-        this.addSuggestion(
+    if (targetKeyword && headings.length > 0) {
+      const headingsWithoutKeyword = headings.filter(
+        (h) => !h.text.toLowerCase().includes(targetKeyword.toLowerCase())
+      )
+      
+      // If no heading contains the keyword, highlight the first heading as a suggestion
+      if (headingsWithoutKeyword.length === headings.length) {
+        const firstHeading = headings[0]
+        this.addPositionedSuggestion(
+          firstHeading.position.from,
+          firstHeading.position.to,
+          firstHeading.text,
+          plainText,
           'Include your target keyword in at least one subheading (H2, H3, etc.).',
           SEO_SUB_CATEGORY.HEADING_MISSING_KEYWORD,
           SEO_RULE.HEADING_MISSING_KEYWORD,
@@ -293,9 +378,17 @@ export class SEOAnalyzer {
       score -= 30
     }
 
-    const firstParagraph = plainText.substring(0, plainText.indexOf('\n\n') > -1 ? plainText.indexOf('\n\n') : plainText.length)
+    // Find first paragraph
+    const firstParagraphEnd = plainText.indexOf('\n\n') > -1 ? plainText.indexOf('\n\n') : plainText.length
+    const firstParagraph = plainText.substring(0, firstParagraphEnd)
+    
     if (!firstParagraph.toLowerCase().includes(targetKeyword.toLowerCase())) {
-      this.addSuggestion(
+      // Position the suggestion at the first paragraph
+      this.addPositionedSuggestion(
+        0,
+        firstParagraphEnd,
+        firstParagraph,
+        plainText,
         'Include the target keyword within the first paragraph.',
         SEO_SUB_CATEGORY.NO_KEYWORD_IN_FIRST_PARAGRAPH,
         SEO_RULE.NO_KEYWORD_IN_FIRST_PARAGRAPH,
