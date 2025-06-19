@@ -169,3 +169,16 @@ export const userPreferences = pgTable('user_preferences', {
 
 export type UserPreferences = typeof userPreferences.$inferSelect;
 export type NewUserPreferences = typeof userPreferences.$inferInsert;
+
+// AI Usage Tracking for Epic 2
+export const aiUsageLogs = pgTable('ai_usage_logs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  date: text('date').notNull(), // YYYY-MM-DD format
+  enhancementsCount: integer('enhancements_count').default(0).notNull(),
+  tokensUsed: integer('tokens_used').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export type AIUsageLog = typeof aiUsageLogs.$inferSelect;

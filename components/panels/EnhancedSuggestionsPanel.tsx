@@ -2,9 +2,8 @@
 
 import { useSuggestions } from '@/contexts/SuggestionContext';
 import { Button } from '@/components/ui/button';
-import { motion, AnimatePresence } from 'framer-motion';
-import { CheckIcon, XIcon, SpellCheck, PenTool, TextSearch, ShieldCheck, FilterIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { AnimatePresence } from 'framer-motion';
+import { FilterIcon } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,46 +13,21 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { useEffect, useRef } from 'react';
+import { EnhancedSuggestionCard } from './EnhancedSuggestionCard';
+import { EnhancedSuggestion } from '@/types/suggestions';
 
 const categoryConfig = {
   spelling: {
     label: 'Spelling',
-    icon: SpellCheck,
-    color: 'text-destructive',
   },
   grammar: {
     label: 'Grammar',
-    icon: PenTool,
-    color: 'text-chart-1',
   },
   style: {
     label: 'Style',
-    icon: TextSearch,
-    color: 'text-chart-2',
   },
   seo: {
     label: 'SEO',
-    icon: ShieldCheck,
-    color: 'text-chart-4',
-  },
-};
-
-const categoryColorMap: Record<string, { border: string; text: string }> = {
-  spelling: {
-    border: 'border-destructive',
-    text: 'text-destructive',
-  },
-  grammar: {
-    border: 'border-chart-1',
-    text: 'text-chart-1',
-  },
-  style: {
-    border: 'border-chart-2',
-    text: 'text-chart-2',
-  },
-  seo: {
-    border: 'border-chart-4',
-    text: 'text-chart-4',
   },
 };
 
@@ -62,7 +36,6 @@ export const EnhancedSuggestionsPanel = () => {
     visibleSuggestions,
     applySuggestion,
     ignoreSuggestion,
-    hoveredSuggestionId,
     setHoveredSuggestionId,
     focusedSuggestionId,
     setFocusedSuggestionId,
@@ -163,71 +136,26 @@ export const EnhancedSuggestionsPanel = () => {
       <div className="relative flex-grow p-4 space-y-4 overflow-y-auto">
         <AnimatePresence initial={false}>
           {visibleSuggestions.map((suggestion) => {
-            const colorClasses = categoryColorMap[suggestion.category] || { border: 'border-gray-700', text: 'text-primary' };
-            const isHovered = suggestion.id === hoveredSuggestionId;
+            const enhancedSuggestion = suggestion as EnhancedSuggestion;
 
             return (
-              <motion.div
+              <div
                 key={suggestion.id}
                 ref={(node) => {
                   if (node) suggestionRefs.current.set(suggestion.id, node);
                   else suggestionRefs.current.delete(suggestion.id);
                 }}
-                layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.2 } }}
                 onMouseEnter={() => setHoveredSuggestionId(suggestion.id)}
                 onMouseLeave={() => setHoveredSuggestionId(null)}
                 onClick={() => handleCardClick(suggestion.id)}
-                className={cn(
-                  'p-4 transition-all duration-300 bg-background border-l-4 rounded-lg shadow-sm cursor-pointer',
-                  colorClasses.border,
-                  { 'bg-muted': isHovered },
-                )}
               >
-                <div className="flex-1">
-                  <p className={cn('text-sm font-semibold capitalize', colorClasses.text)}>{suggestion.category}</p>
-                  <p className="mt-1 text-sm text-foreground/80">{suggestion.message}</p>
-                </div>
-
-                {suggestion.context?.text && suggestion.actions[0]?.value && (
-                  <div className="flex items-center mt-3 text-sm">
-                    <span className="px-2 py-1 font-mono rounded bg-muted text-muted-foreground line-through">
-                      {suggestion.context.text}
-                    </span>
-                    <span className="mx-2">→</span>
-                    <span className="px-2 py-1 font-mono rounded bg-primary/10 text-primary">
-                      {suggestion.actions[0].value}
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end mt-4">
-                  <Button
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleApply(suggestion.id, suggestion.actions[0]?.value || '');
-                    }}
-                    disabled={!suggestion.actions[0]?.value}
-                  >
-                    <CheckIcon className="w-4 h-4 mr-2" />
-                    Apply
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleIgnore(suggestion.id);
-                    }}
-                    className="ml-2 text-muted-foreground hover:text-foreground"
-                  >
-                    <XIcon className="w-4 h-4" />
-                  </Button>
-                </div>
-              </motion.div>
+                <EnhancedSuggestionCard
+                  suggestion={enhancedSuggestion}
+                  isEnhancing={enhancedSuggestion.isEnhancing || false}
+                  onApply={(fix) => handleApply(suggestion.id, fix)}
+                  onIgnore={() => handleIgnore(suggestion.id)}
+                />
+              </div>
             );
           })}
         </AnimatePresence>

@@ -193,3 +193,29 @@ export interface StyleIssue {
   type: 'passive' | 'lexical-illusion' | 'so-start' | 'adverb' | 'cliche' | 'weasel';
   suggestions?: string[];
 }
+
+// AI Enhancement Types for Epic 2
+export interface EnhancedSuggestion extends UnifiedSuggestion {
+  // AI enhancement fields
+  aiEnhanced?: boolean;
+  aiFix?: string;
+  aiConfidence?: number;
+  aiReasoning?: string;
+  shouldReplace?: boolean;
+  alternativeFixes?: string[];
+  aiError?: boolean;
+  
+  // Original fix before AI enhancement
+  originalFix?: string;
+  
+  // UI state
+  isEnhancing?: boolean;
+}
+
+export interface DocumentContext {
+  title: string;
+  firstParagraph: string;
+  detectedTopic?: string;
+  detectedTone?: string;
+  targetKeyword?: string;
+}
