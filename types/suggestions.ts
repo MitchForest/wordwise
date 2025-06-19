@@ -1,9 +1,10 @@
 export interface SuggestionAction {
   label: string;
-  type: 'fix' | 'highlight' | 'explain' | 'ignore' | 'navigate';
+  type: 'fix' | 'ai-fix' | 'highlight' | 'explain' | 'ignore' | 'navigate';
   primary?: boolean;
   value?: string; // The actual fix value for 'fix' type actions
-  handler: () => void | Promise<void>;
+  handler?: () => void | Promise<void>;
+  severity?: 'error' | 'warning' | 'info' | 'suggestion';
 }
 
 export type SuggestionCategory = 'spelling' | 'grammar' | 'style' | 'seo' | 'readability';
@@ -97,17 +98,20 @@ export interface UnifiedSuggestion {
   // Available actions
   actions: SuggestionAction[];
   
-  // For AI enhancement in Phase 3
-  aiActions?: Array<{
-    label: string;
-    type: 'rewrite' | 'simplify' | 'expand' | 'generate';
-    requiresAI: true;
-  }>;
-
   context: SuggestionContext;
   originalText?: string; // The actual error text (for short matches)
   originalFrom?: number; // Original position when created
   originalTo?: number; // Original end position when created
+
+  // AI enhancement fields
+  aiEnhanced?: boolean;
+  aiConfidence?: number;
+  aiReasoning?: string;
+  alternativeFixes?: string[];
+  aiError?: boolean;
+  
+  // UI state
+  isEnhancing?: boolean;
 }
 
 // Define SuggestionContext type
@@ -192,24 +196,6 @@ export interface StyleIssue {
   reason: string;
   type: 'passive' | 'lexical-illusion' | 'so-start' | 'adverb' | 'cliche' | 'weasel';
   suggestions?: string[];
-}
-
-// AI Enhancement Types for Epic 2
-export interface EnhancedSuggestion extends UnifiedSuggestion {
-  // AI enhancement fields
-  aiEnhanced?: boolean;
-  aiFix?: string;
-  aiConfidence?: number;
-  aiReasoning?: string;
-  shouldReplace?: boolean;
-  alternativeFixes?: string[];
-  aiError?: boolean;
-  
-  // Original fix before AI enhancement
-  originalFix?: string;
-  
-  // UI state
-  isEnhancing?: boolean;
 }
 
 export interface DocumentContext {

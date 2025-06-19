@@ -13,7 +13,7 @@ import { useDebouncedCallback } from 'use-debounce';
 import { useSuggestions } from '@/contexts/SuggestionContext';
 import { Node } from '@tiptap/pm/model';
 import { toast } from 'sonner';
-import { EnhancedSuggestion, UnifiedSuggestion } from '@/types/suggestions';
+import { UnifiedSuggestion } from '@/types/suggestions';
 import { analysisCache } from '@/services/analysis/cache';
 import { useRetextAnalysis } from './useRetextAnalysis';
 import { SuggestionDeduplicator } from '@/services/analysis/suggestion-deduplicator';
@@ -24,6 +24,7 @@ const AI_ENHANCEMENT_DELAY = 1000; // Reduced from 2000ms to 1000ms
 export const useUnifiedAnalysis = (
   doc: Node | null,
   isReady: boolean,
+  onSuggestionsChange: (suggestions: UnifiedSuggestion[]) => void,
   documentMetadata: {
     title: string;
     metaDescription: string;
@@ -33,9 +34,9 @@ export const useUnifiedAnalysis = (
   documentId?: string,
   enableSEOChecks: boolean = false
 ) => {
-  const { setMetrics, updateSuggestions, suggestions } = useSuggestions();
+  const { setMetrics } = useSuggestions();
   const [enhancementState, setEnhancementState] = useState<'idle' | 'enhancing' | 'enhanced'>('idle');
-  const [enhancedSuggestions, setEnhancedSuggestions] = useState<Map<string, EnhancedSuggestion>>(new Map());
+  const [enhancedSuggestions, setEnhancedSuggestions] = useState<Map<string, UnifiedSuggestion>>(new Map());
   const enhancedSuggestionIds = useRef<Set<string>>(new Set());
   const aiEnhancementTimer = useRef<NodeJS.Timeout | null>(null);
   const lastEnhancedDocHash = useRef<string>('');
@@ -58,7 +59,7 @@ export const useUnifiedAnalysis = (
   
   // Set up AI Queue Manager callback
   useEffect(() => {
-    aiQueueManager.current.setUpdateCallback((enhanced: EnhancedSuggestion[]) => {
+    aiQueueManager.current.setUpdateCallback((enhanced: UnifiedSuggestion[]) => {
       setEnhancementState('enhanced');
       
       // Update enhanced suggestions map
@@ -84,13 +85,13 @@ export const useUnifiedAnalysis = (
   // Immediate check to clear suggestions if the document is empty
   useEffect(() => {
     if (isReady && (!doc || doc.textContent.trim().length === 0)) {
-      updateSuggestions(['spelling', 'grammar', 'style', 'seo', 'readability'], []);
+      onSuggestionsChange([]);
       setMetrics(null);
       setEnhancementState('idle');
       setEnhancedSuggestions(new Map());
       aiQueueManager.current.clear();
     }
-  }, [doc, isReady, updateSuggestions, setMetrics]);
+  }, [doc, isReady, onSuggestionsChange, setMetrics]);
 
   // Tier 3 (Real-time): Live Word Count
   useEffect(() => {
@@ -128,8 +129,14 @@ export const useUnifiedAnalysis = (
       final: allSuggestions.length
     });
     
-    updateSuggestions(['spelling', 'grammar', 'style', 'seo', 'readability'], allSuggestions);
-  }, [retextSuggestions, serverSuggestions, enhancedSuggestions, updateSuggestions]);
+    onSuggestionsChange(allSuggestions);
+
+    // Enqueue suggestions for AI enhancement after deduplication
+    const suggestionsForAI = [...retextSuggestions, ...serverSuggestions];
+    if (suggestionsForAI.length > 0) {
+      aiQueueManager.current.enqueueSuggestions(suggestionsForAI);
+    }
+  }, [retextSuggestions, serverSuggestions, enhancedSuggestions, onSuggestionsChange]);
 
   // Tier 2: Deep Analysis (Metrics, SEO) - Long debounce
   const debouncedDeepAnalysis = useDebouncedCallback(async (currentDoc, metadata) => {
@@ -207,13 +214,13 @@ export const useUnifiedAnalysis = (
       if (!documentId) return;
       
       const enhancedCacheKey = `enhanced-suggestions-${documentId}`;
-      const cached = await analysisCache.getAsync<EnhancedSuggestion[]>(enhancedCacheKey);
+      const cached = await analysisCache.getAsync<UnifiedSuggestion[]>(enhancedCacheKey);
       
       if (cached && cached.length > 0) {
         console.log('[AI Enhancement] Restored enhanced suggestions from cache:', cached.length);
         
         // Restore enhanced suggestions map
-        const restoredMap = new Map<string, EnhancedSuggestion>();
+        const restoredMap = new Map<string, UnifiedSuggestion>();
         cached.forEach(s => {
           restoredMap.set(s.id, s);
           enhancedSuggestionIds.current.add(s.id);
@@ -227,18 +234,10 @@ export const useUnifiedAnalysis = (
     restoreEnhancedSuggestions();
   }, [documentId]);
 
-  // Queue suggestions for AI enhancement
-  useEffect(() => {
-    const allCurrentSuggestions = [...retextSuggestions, ...serverSuggestions];
-    if (allCurrentSuggestions.length > 0) {
-      aiQueueManager.current.enqueueSuggestions(allCurrentSuggestions);
-    }
-  }, [retextSuggestions, serverSuggestions]);
-
   // Trigger deduplication when any suggestions change
   useEffect(() => {
     deduplicateAndUpdate();
-  }, [retextSuggestions, serverSuggestions, enhancedSuggestions, deduplicateAndUpdate]);
+  }, [deduplicateAndUpdate]);
 
   // Delayed AI Enhancement for finding additional errors
   const debouncedAdditionalErrorDetection = useDebouncedCallback(async (currentDoc) => {
@@ -298,7 +297,7 @@ export const useUnifiedAnalysis = (
 
   // Clean up enhanced IDs when suggestions are removed
   useEffect(() => {
-    const currentSuggestionIds = new Set(suggestions.map(s => s.id));
+    const currentSuggestionIds = new Set(serverSuggestions.map(s => s.id));
     const enhancedIds = Array.from(enhancedSuggestionIds.current);
     
     enhancedIds.forEach(id => {
@@ -306,7 +305,7 @@ export const useUnifiedAnalysis = (
         enhancedSuggestionIds.current.delete(id);
       }
     });
-  }, [suggestions]);
+  }, [serverSuggestions]);
 
   // Main effect to orchestrate all checks
   useEffect(() => {

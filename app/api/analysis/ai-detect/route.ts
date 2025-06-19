@@ -21,7 +21,7 @@ type ProseMirrorNode = {
 // SCHEMA: Define structure for AI-detected suggestions
 const additionalSuggestionsSchema = z.object({
   suggestions: z.array(z.object({
-    category: z.enum(['spelling', 'grammar', 'style', 'seo']),
+    category: z.enum(['spelling', 'grammar', 'style', 'seo', 'tone']),
     matchText: z.string(),
     message: z.string(),
     fix: z.string(),

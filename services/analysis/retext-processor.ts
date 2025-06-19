@@ -6,10 +6,11 @@
 
 import { unified } from 'unified';
 import retextEnglish from 'retext-english';
+import retextStringify from 'retext-stringify';
 import type { VFile } from 'vfile';
 
 export class RetextProcessor {
-  private spellProcessor: any;
+  private grammarProcessor: any;
   private styleProcessor: any;
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
@@ -24,7 +25,7 @@ export class RetextProcessor {
   
   private async _initialize() {
     try {
-      // Core plugins loaded immediately
+      // Core plugins loaded immediately (browser-compatible)
       const [
         { default: retextRepeatedWords },
         { default: retextSentenceSpacing },
@@ -35,52 +36,46 @@ export class RetextProcessor {
         import('retext-indefinite-article')
       ]);
       
-      // Instant checks (0ms) - temporarily skip spell checking
-      this.spellProcessor = unified()
+      // Grammar processor (spell checking handled separately by Typo.js)
+      this.grammarProcessor = unified()
         .use(retextEnglish)
         .use(retextRepeatedWords)
         .use(retextSentenceSpacing)
-        .use(retextIndefiniteArticle);
+        .use(retextIndefiniteArticle)
+        .use(retextStringify);
       
-      // Style checks loaded after 100ms (progressive enhancement)
-      setTimeout(async () => {
-        try {
-          const [
-            { default: retextPassive },
-            { default: retextSimplify },
-            { default: retextQuotes },
-            { default: retextContractions },
-            { default: retextReadability },
-            { default: retextEquality }
-          ] = await Promise.all([
-            import('retext-passive'),
-            import('retext-simplify'),
-            import('retext-quotes'),
-            import('retext-contractions'),
-            import('retext-readability'),
-            import('retext-equality')
-          ]);
-          
-          this.styleProcessor = unified()
-            .use(retextEnglish)
-            .use(retextPassive)
-            .use(retextSimplify)
-            .use(retextQuotes)
-            .use(retextContractions, { straight: true })
-            .use(retextReadability, {
-              age: 16, // Target reading age
-              minWords: 5 // Min words per sentence for analysis
-            })
-            .use(retextEquality);
+      // Style checks are also loaded, but can be run separately
+      const [
+        { default: retextPassive },
+        { default: retextSimplify },
+        { default: retextQuotes },
+        { default: retextContractions },
+        { default: retextReadability },
+        { default: retextEquality }
+      ] = await Promise.all([
+        import('retext-passive'),
+        import('retext-simplify'),
+        import('retext-quotes'),
+        import('retext-contractions'),
+        import('retext-readability'),
+        import('retext-equality')
+      ]);
+        
+      this.styleProcessor = unified()
+        .use(retextEnglish)
+        .use(retextPassive)
+        .use(retextSimplify)
+        .use(retextQuotes)
+        .use(retextContractions, { straight: true })
+        .use(retextReadability, {
+          age: 16, // Target reading age
+          minWords: 5 // Min words per sentence for analysis
+        })
+        .use(retextEquality)
+        .use(retextStringify);
             
-          console.log('[Retext] Style processor initialized');
-        } catch (error) {
-          console.error('[Retext] Failed to load style plugins:', error);
-        }
-      }, 100);
-      
       this.isInitialized = true;
-      console.log('[Retext] Core processor initialized');
+      console.log('[Retext] All processors initialized');
     } catch (error) {
       console.error('[Retext] Initialization failed:', error);
       this.initPromise = null;
@@ -88,22 +83,30 @@ export class RetextProcessor {
     }
   }
   
-  async runSpellCheck(text: string): Promise<VFile['messages']> {
-    if (!this.isInitialized) await this.initialize();
-    if (!this.spellProcessor) return [];
-    
+  async runGrammarCheck(text: string): Promise<VFile['messages']> {
+    await this.initialize();
+
     try {
-      const file = await this.spellProcessor.process(text);
-      return file.messages;
+      if (!this.grammarProcessor) {
+        console.warn('[Retext] Grammar processor not available, skipping check.');
+        return [];
+      }
+      
+      const file = await this.grammarProcessor.process(text);
+      return file.messages || [];
     } catch (error) {
-      console.error('[Retext] Spell check error:', error);
+      console.error('[Retext] Grammar check error:', error);
       return [];
     }
   }
   
   async runStyleCheck(text: string): Promise<VFile['messages']> {
-    if (!this.isInitialized) await this.initialize();
-    if (!this.styleProcessor) return []; // Graceful degradation
+    await this.initialize();
+    
+    if (!this.styleProcessor) {
+      console.warn('[Retext] Style processor not available, skipping check.');
+      return []; 
+    }
     
     try {
       const file = await this.styleProcessor.process(text);
@@ -116,7 +119,7 @@ export class RetextProcessor {
   
   // Cleanup method for memory management
   cleanup() {
-    this.spellProcessor = null;
+    this.grammarProcessor = null;
     this.styleProcessor = null;
     this.isInitialized = false;
     this.initPromise = null;

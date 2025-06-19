@@ -13,9 +13,10 @@ import { Button } from '@/components/ui/button';
 
 interface EditorStatusBarProps {
   onCheckSEO?: () => void;
+  wordCount: number;
 }
 
-export function EditorStatusBar({ onCheckSEO }: EditorStatusBarProps) {
+export function EditorStatusBar({ onCheckSEO, wordCount }: EditorStatusBarProps) {
   const { suggestions, metrics, setFilter } = useSuggestions();
 
   const handleSuggestionsClick = () => {
@@ -54,7 +55,7 @@ export function EditorStatusBar({ onCheckSEO }: EditorStatusBarProps) {
         />
         <Metric
           title="Word Count"
-          value={metrics?.wordCount ?? 0}
+          value={wordCount}
           icon={Pilcrow}
         />
         <Metric

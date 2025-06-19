@@ -6,13 +6,14 @@
 
 'use client';
 
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { useDebouncedCallback } from 'use-debounce';
 import { Node } from '@tiptap/pm/model';
 import { UnifiedSuggestion } from '@/types/suggestions';
 import { retextProcessor } from '@/services/analysis/retext-processor';
 import { RetextConverter } from '@/services/analysis/retext-converter';
 import { RetextCache } from '@/services/analysis/retext-cache';
+import { typoSpellChecker } from '@/services/analysis/typo-spell-checker';
 import { PerformanceMetrics } from '@/services/analytics/performance-metrics';
 import React from 'react';
 
@@ -48,29 +49,37 @@ export function useRetextAnalysis(
   isReady: boolean
 ) {
   const [spellingSuggestions, setSpellingSuggestions] = useState<UnifiedSuggestion[]>([]);
+  const [grammarSuggestions, setGrammarSuggestions] = useState<UnifiedSuggestion[]>([]);
   const [styleSuggestions, setStyleSuggestions] = useState<UnifiedSuggestion[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [fallbackToServer, setFallbackToServer] = useState(false);
+  const [isProcessorInitialized, setProcessorInitialized] = useState(false);
   const processingRef = useRef(false);
   const cache = useRef(new RetextCache());
   
-  // Initialize retext on mount
+  // Initialize both retext and typo spell checker on mount
   useEffect(() => {
-    retextProcessor.initialize().catch(() => {
-      console.error('[Retext] Failed to initialize, using server fallback');
+    Promise.all([
+      retextProcessor.initialize(),
+      typoSpellChecker.initialize()
+    ]).then(() => {
+      setProcessorInitialized(true);
+    }).catch((error) => {
+      console.error('[Analysis] Failed to initialize, using server fallback:', error);
       setFallbackToServer(true);
     });
     
     // Cleanup on unmount
     return () => {
       retextProcessor.cleanup();
+      typoSpellChecker.cleanup();
       cache.current.clear();
     };
   }, []);
   
-  // Instant spell check (0ms) with caching
+  // Instant spell check (0ms) using Typo.js with caching
   const runSpellCheck = useCallback(async (text: string) => {
-    if (!text || text.length < 2 || processingRef.current || fallbackToServer) return;
+    if (!text || text.length < 2 || fallbackToServer) return;
     
     const cacheKey = cache.current.generateKey(text, 'spell');
     const cached = cache.current.get(cacheKey);
@@ -81,13 +90,10 @@ export function useRetextAnalysis(
     }
     
     try {
-      processingRef.current = true;
       const start = performance.now();
       
-      const messages = await retextProcessor.runSpellCheck(text);
-      const suggestions = messages.map(msg => 
-        RetextConverter.messageToSuggestion(msg, text, 'spelling')
-      );
+      // Use Typo.js for spell checking (synchronous, browser-compatible)
+      const suggestions = typoSpellChecker.analyzeText(text);
       
       const duration = performance.now() - start;
       PerformanceMetrics.trackAnalysisTime('retext', duration, suggestions.length);
@@ -95,25 +101,49 @@ export function useRetextAnalysis(
       cache.current.set(cacheKey, suggestions);
       setSpellingSuggestions(suggestions);
     } catch (error) {
-      console.error('[Retext] Spell check error:', error);
+      console.error('[Typo] Spell check error:', error);
       setFallbackToServer(true);
-    } finally {
-      processingRef.current = false;
     }
   }, [fallbackToServer]);
   
-  // Debounced style check (50ms) with caching
-  const debouncedStyleCheck = useDebouncedCallback(async (text: string) => {
-    if (!text || text.length < 10 || fallbackToServer) {
-      setStyleSuggestions([]);
+  // Grammar check using retext
+  const runGrammarCheck = useCallback(async (text: string) => {
+    if (!text || text.length < 5 || fallbackToServer) {
+      setGrammarSuggestions([]);
       return;
     }
     
-    const cacheKey = cache.current.generateKey(text, 'style');
+    const cacheKey = cache.current.generateKey(text, 'grammar');
     const cached = cache.current.get(cacheKey);
     
     if (cached) {
-      setStyleSuggestions(cached);
+      setGrammarSuggestions(cached);
+      return;
+    }
+    
+    try {
+      const start = performance.now();
+      
+      const messages = await retextProcessor.runGrammarCheck(text);
+      const suggestions = messages.map(msg => 
+        RetextConverter.messageToSuggestion(msg, text, 'grammar')
+      );
+      
+      const duration = performance.now() - start;
+      PerformanceMetrics.trackAnalysisTime('retext', duration, suggestions.length);
+      
+      cache.current.set(cacheKey, suggestions);
+      setGrammarSuggestions(suggestions);
+    } catch (error) {
+      console.error('[Retext] Grammar check error:', error);
+      setFallbackToServer(true);
+    }
+  }, [fallbackToServer]);
+  
+  // Create debounced style check function without dependencies
+  const debouncedStyleCheck = useDebouncedCallback(async (text: string) => {
+    if (!text || text.length < 10) {
+      setStyleSuggestions([]);
       return;
     }
     
@@ -123,39 +153,94 @@ export function useRetextAnalysis(
       
       const messages = await retextProcessor.runStyleCheck(text);
       const suggestions = messages.map(msg => 
-        RetextConverter.messageToSuggestion(msg, text)
+        RetextConverter.messageToSuggestion(msg, text, 'style')
       );
       
       const duration = performance.now() - start;
       PerformanceMetrics.trackAnalysisTime('retext', duration, suggestions.length);
       
-      cache.current.set(cacheKey, suggestions);
       setStyleSuggestions(suggestions);
     } catch (error) {
       console.error('[Retext] Style check error:', error);
-      setFallbackToServer(true);
+      setStyleSuggestions([]);
     } finally {
       setIsProcessing(false);
     }
-  }, 50);
+  }, 50, { leading: false, trailing: true });
   
-  // Run checks when document changes
+  // Run checks when document changes - MINIMAL DEPENDENCIES
   useEffect(() => {
-    if (!doc || !isReady) return;
+    if (!doc || !isReady || !isProcessorInitialized) return;
     
     const text = doc.textContent;
     
-    // Run instant spell check
-    runSpellCheck(text);
+    // Spell check with Typo.js (instant)
+    if (text && text.length >= 2) {
+      try {
+        const suggestions = typoSpellChecker.analyzeText(text);
+        setSpellingSuggestions(suggestions);
+      } catch (error) {
+        console.error('[Typo] Spell check error:', error);
+        setSpellingSuggestions([]);
+      }
+    } else {
+      setSpellingSuggestions([]);
+    }
     
-    // Run debounced style check
-    debouncedStyleCheck(text);
-  }, [doc, isReady, runSpellCheck, debouncedStyleCheck]);
+    // Grammar check with retext (instant)
+    if (text && text.length >= 5) {
+      retextProcessor.runGrammarCheck(text).then(messages => {
+        try {
+          const suggestions = messages.map(msg => 
+            RetextConverter.messageToSuggestion(msg, text, 'grammar')
+          );
+          setGrammarSuggestions(suggestions);
+        } catch (error) {
+          console.error('[Retext] Grammar check error:', error);
+          setGrammarSuggestions([]);
+        }
+      }).catch(() => {
+        setGrammarSuggestions([]);
+      });
+    } else {
+      setGrammarSuggestions([]);
+    }
+    
+    // Style check (debounced) - inline to avoid closure dependencies
+    if (text && text.length >= 10) {
+      // Clear previous timeout to debounce
+      const timeoutId = setTimeout(async () => {
+        try {
+          setIsProcessing(true);
+          const messages = await retextProcessor.runStyleCheck(text);
+          const suggestions = messages.map(msg => 
+            RetextConverter.messageToSuggestion(msg, text, 'style')
+          );
+          setStyleSuggestions(suggestions);
+        } catch (error) {
+          console.error('[Retext] Style check error:', error);
+          setStyleSuggestions([]);
+        } finally {
+          setIsProcessing(false);
+        }
+      }, 50);
+      
+      // Cleanup timeout on next render
+      return () => clearTimeout(timeoutId);
+    } else {
+      setStyleSuggestions([]);
+    }
+  }, [doc?.textContent, isReady, isProcessorInitialized]); // Use textContent and initialization state as dependency
   
+  const allSuggestions = useMemo(() => {
+    return [...spellingSuggestions, ...grammarSuggestions, ...styleSuggestions];
+  }, [spellingSuggestions, grammarSuggestions, styleSuggestions]);
+
   return {
     spellingSuggestions,
+    grammarSuggestions,
     styleSuggestions,
-    allSuggestions: [...spellingSuggestions, ...styleSuggestions],
+    allSuggestions,
     isProcessing,
     fallbackToServer
   };

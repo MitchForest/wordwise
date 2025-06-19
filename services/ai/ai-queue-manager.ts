@@ -4,8 +4,9 @@
  * @created 2024-12-28
  */
 
-import { UnifiedSuggestion, EnhancedSuggestion } from '@/types/suggestions';
+import { UnifiedSuggestion } from '@/types/suggestions';
 import { AIEnhancementService } from './enhancement-service';
+import { DocumentContext } from './document-context';
 
 // Create a singleton instance
 const enhancementService = new AIEnhancementService();
@@ -22,13 +23,13 @@ export class AIQueueManager {
   private batchTimer: NodeJS.Timeout | null = null;
   private readonly BATCH_DELAY = 1000; // 1 second
   private readonly MAX_BATCH_SIZE = 10;
-  private onUpdate: ((suggestions: EnhancedSuggestion[]) => void) | null = null;
+  private onUpdate: ((suggestions: UnifiedSuggestion[]) => void) | null = null;
   
   /**
    * @purpose Set callback for when enhanced suggestions are ready
    * @param callback - Function to call with enhanced suggestions
    */
-  setUpdateCallback(callback: (suggestions: EnhancedSuggestion[]) => void) {
+  setUpdateCallback(callback: (suggestions: UnifiedSuggestion[]) => void) {
     this.onUpdate = callback;
   }
   
@@ -93,7 +94,7 @@ export class AIQueueManager {
         categoryGroups.get(item.category)!.push(item);
       });
       
-      const allEnhanced: EnhancedSuggestion[] = [];
+      const allEnhanced: UnifiedSuggestion[] = [];
       
       // Process each category group
       for (const [category, items] of categoryGroups) {

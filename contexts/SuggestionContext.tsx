@@ -18,7 +18,7 @@ interface EditorActions {
   getDocumentText?: () => string; // NEW: for text-based cleanup
 }
 
-interface SuggestionFilter {
+export interface SuggestionFilter {
   categories: string[];
 }
 
@@ -31,7 +31,7 @@ interface SuggestionContextType {
   focusedSuggestionId: string | null;
   isReconciliationActive: boolean;
   setMetrics: (metrics: Partial<DocumentMetrics> | null) => void;
-  setFilter: (filter: SuggestionFilter) => void;
+  setFilter: React.Dispatch<React.SetStateAction<SuggestionFilter>>;
   setHoveredSuggestionId: (id: string | null) => void;
   setFocusedSuggestionId: (id: string | null) => void;
   registerEditorActions: (actions: EditorActions) => void;
@@ -91,30 +91,34 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
     return suggestionsRef.current;
   }, []);
 
-  // Queue suggestions during reconciliation window
-  const queueSuggestionsForReconciliation = useCallback((newSuggestions: UnifiedSuggestion[]) => {
-    if (reconciliationActive) {
-      console.log('[SuggestionContext] Reconciliation active, queuing suggestions:', newSuggestions.length);
-      // Add to pending queue, avoiding duplicates
-      const existingPendingIds = new Set(pendingSuggestions.current.map(s => s.id));
-      const uniqueNewSuggestions = newSuggestions.filter(s => !existingPendingIds.has(s.id));
-      pendingSuggestions.current = [...pendingSuggestions.current, ...uniqueNewSuggestions];
-    } else {
-      // Immediately add if not in reconciliation
-      setSuggestions(prev => {
-        const existingIds = new Set(prev.map(s => s.id));
-        const uniqueNewSuggestions = newSuggestions.filter(s => !existingIds.has(s.id));
-        return [...prev, ...uniqueNewSuggestions];
-      });
-    }
-  }, [reconciliationActive]);
+  // Queue suggestions during reconciliation window - removed from useCallback to avoid dependencies
+  const queueSuggestionsForReconciliation = (newSuggestions: UnifiedSuggestion[]) => {
+    // Check reconciliation state directly without depending on it
+    setReconciliationActive(currentReconciliationActive => {
+      if (currentReconciliationActive) {
+        console.log('[SuggestionContext] Reconciliation active, queuing suggestions:', newSuggestions.length);
+        // Add to pending queue, avoiding duplicates
+        const existingPendingIds = new Set(pendingSuggestions.current.map(s => s.id));
+        const uniqueNewSuggestions = newSuggestions.filter(s => !existingPendingIds.has(s.id));
+        pendingSuggestions.current = [...pendingSuggestions.current, ...uniqueNewSuggestions];
+      } else {
+        // Immediately add if not in reconciliation
+        setSuggestions(prev => {
+          const existingIds = new Set(prev.map(s => s.id));
+          const uniqueNewSuggestions = newSuggestions.filter(s => !existingIds.has(s.id));
+          return [...prev, ...uniqueNewSuggestions];
+        });
+      }
+      
+      return currentReconciliationActive; // Don't change reconciliation state
+    });
+  };
 
   const updateSuggestions = useCallback(
     (categories: string[], newSuggestionsFromServer: UnifiedSuggestion[]) => {
       console.log('[SuggestionContext] Received suggestions:', {
         categories,
         count: newSuggestionsFromServer.length,
-        reconciliationActive,
         suggestions: newSuggestionsFromServer.map(s => ({
           id: s.id,
           category: s.category,
@@ -124,19 +128,29 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
         }))
       });
       
-      // If reconciliation is active, queue the suggestions
-      if (reconciliationActive) {
-        // Clear any pending timer for delayed updates
-        if (pendingUpdateTimer.current) {
-          clearTimeout(pendingUpdateTimer.current);
-        }
-        
-        // Queue these suggestions for later
-        queueSuggestionsForReconciliation(newSuggestionsFromServer);
-        return;
-      }
-      
+      // Use state setter function to avoid dependency on reconciliationActive
       setSuggestions(prevSuggestions => {
+        // Check reconciliation state directly from the state setter context
+        setReconciliationActive(currentReconciliationActive => {
+          // If reconciliation is currently active, queue the suggestions
+          if (currentReconciliationActive) {
+            // Clear any pending timer for delayed updates
+            if (pendingUpdateTimer.current) {
+              clearTimeout(pendingUpdateTimer.current);
+            }
+            
+            // Queue these suggestions for later - inline to avoid dependency
+            const existingPendingIds = new Set(pendingSuggestions.current.map(s => s.id));
+            const uniqueNewSuggestions = newSuggestionsFromServer.filter(s => !existingPendingIds.has(s.id));
+            pendingSuggestions.current = [...pendingSuggestions.current, ...uniqueNewSuggestions];
+            
+            return currentReconciliationActive; // Don't change reconciliation state
+          }
+          
+          return currentReconciliationActive; // Don't change reconciliation state
+        });
+      
+        // Normal update path
         // Get current document text if available
         const documentText = editorActions?.getDocumentText?.() || '';
         
@@ -174,7 +188,7 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
         return finalList;
       });
     },
-    [editorActions, reconciliationActive, queueSuggestionsForReconciliation],
+    [editorActions]
   );
 
   const registerEditorActions = useCallback((actions: EditorActions) => {

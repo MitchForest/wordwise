@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -42,16 +42,28 @@ export function Sidebar({ collapsed, onToggle, onDocumentTitleChange, refreshDoc
   const router = useRouter();
   const { data: session } = useSession();
 
+  const fetchDocuments = useCallback(async () => {
+    try {
+      const response = await fetch('/api/documents');
+      const data = await response.json();
+      setDocuments(data.documents || []);
+    } catch (error) {
+      console.error('Failed to fetch documents:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDocuments();
-  }, []);
+  }, [fetchDocuments]);
   
   // Expose fetchDocuments to parent via ref
   useEffect(() => {
     if (refreshDocumentsRef) {
       refreshDocumentsRef.current = fetchDocuments;
     }
-  }, [refreshDocumentsRef]);
+  }, [refreshDocumentsRef, fetchDocuments]);
 
   // Refresh documents when pathname changes (navigating between documents)
   useEffect(() => {
@@ -62,19 +74,7 @@ export function Sidebar({ collapsed, onToggle, onDocumentTitleChange, refreshDoc
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [pathname]);
-
-  const fetchDocuments = async () => {
-    try {
-      const response = await fetch('/api/documents');
-      const data = await response.json();
-      setDocuments(data.documents || []);
-    } catch (error) {
-      console.error('Failed to fetch documents:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [pathname, fetchDocuments]);
 
   const handleDeleteDocument = async (documentId: string) => {
     if (!confirm('Are you sure you want to delete this document? This action cannot be undone.')) {

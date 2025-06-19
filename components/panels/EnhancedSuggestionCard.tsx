@@ -7,9 +7,8 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { EnhancedSuggestion } from '@/types/suggestions';
+import { UnifiedSuggestion } from '@/types/suggestions';
 
 const categoryColorMap: Record<string, { border: string; text: string }> = {
   spelling: { border: 'border-destructive', text: 'text-destructive' },
@@ -18,35 +17,29 @@ const categoryColorMap: Record<string, { border: string; text: string }> = {
   seo: { border: 'border-chart-4', text: 'text-chart-4' },
 };
 
-interface Props {
-  suggestion: EnhancedSuggestion;
-  isEnhancing: boolean;
-  onApply: (fix: string) => void;
-  onIgnore: () => void;
+interface EnhancedSuggestionCardProps {
+  suggestion: UnifiedSuggestion;
+  onAccept: (suggestion: UnifiedSuggestion) => void;
+  onDismiss: (suggestion: UnifiedSuggestion) => void;
 }
 
-export function EnhancedSuggestionCard({ 
-  suggestion, 
-  isEnhancing,
-  onApply,
-  onIgnore 
-}: Props) {
-  const [showBothFixes, setShowBothFixes] = useState(false);
+export function EnhancedSuggestionCard({ suggestion, onAccept, onDismiss }: EnhancedSuggestionCardProps) {
+  const aiFixAction = suggestion.actions.find(a => a.type === 'ai-fix');
+  const originalFixAction = suggestion.actions.find(a => a.type === 'fix');
   
-  // Determine if AI provided a different fix
-  const hasAIFix = suggestion.aiFix && suggestion.aiFix !== suggestion.actions[0]?.value;
-  const shouldShowConfidence = suggestion.aiConfidence !== undefined;
+  const shouldShowConfidence = suggestion.aiConfidence && suggestion.aiConfidence > 0;
   
   return (
     <motion.div
       layout
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
       className={cn(
         "p-4 border-l-4 rounded-lg shadow-sm transition-all duration-300",
         categoryColorMap[suggestion.category]?.border,
-        isEnhancing && "animate-pulse-subtle"
+        suggestion.isEnhancing && "animate-pulse-subtle"
       )}
       animate={
-        suggestion.aiEnhanced && !isEnhancing
+        suggestion.aiEnhanced && !suggestion.isEnhancing
           ? { scale: [1, 1.02, 1] }
           : {}
       }
@@ -63,7 +56,7 @@ export function EnhancedSuggestionCard({
           </p>
           
           <AnimatePresence>
-            {(suggestion.aiEnhanced || isEnhancing) && (
+            {(suggestion.aiEnhanced || suggestion.isEnhancing) && (
               <motion.div
                 initial={{ scale: 0, rotate: -180 }}
                 animate={{ scale: 1, rotate: 0 }}
@@ -72,7 +65,7 @@ export function EnhancedSuggestionCard({
               >
                 <Sparkles className={cn(
                   "w-4 h-4",
-                  isEnhancing ? "text-purple-400 animate-spin" : "text-purple-500"
+                  suggestion.isEnhancing ? "text-purple-400 animate-spin" : "text-purple-500"
                 )} />
               </motion.div>
             )}
@@ -80,7 +73,7 @@ export function EnhancedSuggestionCard({
         </div>
         
         {/* Confidence indicator */}
-        {shouldShowConfidence && !isEnhancing && (
+        {shouldShowConfidence && !suggestion.isEnhancing && (
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -115,63 +108,23 @@ export function EnhancedSuggestionCard({
         </div>
         
         {/* Fix options */}
-        {isEnhancing ? (
+        {suggestion.isEnhancing ? (
           <div className="flex items-center text-sm">
             <span className="text-purple-500 mr-2">AI analyzing...</span>
-            <div className="flex gap-1">
-              <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" />
-              <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce delay-100" />
-              <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce delay-200" />
-            </div>
           </div>
         ) : (
-          <>
-            {/* Show primary fix */}
-            <div className="flex items-center text-sm">
-              <span className="text-gray-500 mr-2">Fix:</span>
-              <code className="px-2 py-1 bg-green-50 text-green-700 rounded">
-                {suggestion.aiFix || suggestion.actions[0]?.value || 'No fix available'}
-              </code>
-              {hasAIFix && (
-                <button
-                  onClick={() => setShowBothFixes(!showBothFixes)}
-                  className="ml-2 text-xs text-purple-600 hover:text-purple-700"
-                >
-                  {showBothFixes ? 'Hide original' : 'Show original'}
-                </button>
-              )}
-            </div>
-            
-            {/* Show both fixes if requested */}
-            <AnimatePresence>
-              {showBothFixes && hasAIFix && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="ml-4 space-y-1 overflow-hidden"
-                >
-                  <div className="flex items-center text-xs">
-                    <span className="text-gray-400 mr-2">Original:</span>
-                    <code className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-                      {suggestion.actions[0]?.value}
-                    </code>
-                  </div>
-                  <div className="flex items-center text-xs">
-                    <Sparkles className="w-3 h-3 text-purple-500 mr-1" />
-                    <span className="text-purple-600 mr-2">AI Enhanced:</span>
-                    <code className="px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded">
-                      {suggestion.aiFix}
-                    </code>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </>
+          <div className="flex items-center text-sm">
+            {aiFixAction && (
+              <span className="text-purple-500 mr-2">{aiFixAction.value}</span>
+            )}
+            {originalFixAction && (
+              <span className="text-gray-400 line-through">{originalFixAction.value}</span>
+            )}
+          </div>
         )}
         
         {/* AI reasoning (if available) */}
-        {suggestion.aiReasoning && !isEnhancing && (
+        {suggestion.aiReasoning && !suggestion.isEnhancing && (
           <motion.p
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -186,10 +139,10 @@ export function EnhancedSuggestionCard({
       <div className="flex items-center justify-end mt-4 gap-2">
         <Button
           size="sm"
-          onClick={() => onApply(suggestion.aiFix || suggestion.actions[0]?.value || '')}
-          disabled={!suggestion.actions[0]?.value && !suggestion.aiFix}
+          onClick={() => onAccept(suggestion)}
+          disabled={!aiFixAction && !originalFixAction}
           className={cn(
-            "transition-all duration-200",
+            "bg-green-100 text-green-800 hover:bg-green-200",
             suggestion.aiEnhanced && "ring-1 ring-purple-200"
           )}
         >
@@ -199,7 +152,7 @@ export function EnhancedSuggestionCard({
         <Button
           variant="ghost"
           size="icon"
-          onClick={onIgnore}
+          onClick={() => onDismiss(suggestion)}
           className="text-muted-foreground hover:text-foreground"
         >
           <X className="w-4 h-4" />

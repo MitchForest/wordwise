@@ -7,7 +7,6 @@
 import { db } from '@/lib/db';
 import { aiUsageLogs } from '@/lib/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
-import { AIUsageStats } from './types';
 
 const DAILY_ENHANCEMENT_LIMIT = 1000; // Generous for now
 
@@ -69,7 +68,7 @@ export async function trackAIUsage(
  * @param userId - The user's ID
  * @returns Usage statistics including used, limit, and remaining
  */
-export async function getUserAIUsage(userId: string): Promise<AIUsageStats> {
+export async function getUserAIUsage(userId: string) {
   const today = new Date().toISOString().split('T')[0];
   
   const usage = await db.query.aiUsageLogs.findFirst({

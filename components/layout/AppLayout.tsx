@@ -1,7 +1,7 @@
 'use client';
 
 import { Sidebar } from './sidebar';
-import { useState, createContext, useContext, useRef } from 'react';
+import { useState, createContext, useContext, useRef, useCallback } from 'react';
 import { useSession } from '@/lib/auth/client';
 
 // Context for document title updates
@@ -34,7 +34,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const refreshDocumentsRef = useRef<() => void>(() => {});
   const [documentUpdates, setDocumentUpdates] = useState<{ [key: string]: { title?: string; timestamp: number } }>({});
   
-  const handleDocumentTitleChange = (documentId: string, newTitle: string) => {
+  const handleDocumentTitleChange = useCallback((documentId: string, newTitle: string) => {
     // Refresh the sidebar documents list when title changes
     refreshDocumentsRef.current();
     
@@ -43,11 +43,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       ...prev,
       [documentId]: { title: newTitle, timestamp: Date.now() }
     }));
-  };
+  }, []);
   
-  const refreshDocuments = () => {
+  const refreshDocuments = useCallback(() => {
     refreshDocumentsRef.current();
-  };
+  }, []);
   
   if (!session) {
     return <div>Loading...</div>;

@@ -6,7 +6,7 @@
  */
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { EditorContent, EditorContext, useEditor } from '@tiptap/react';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useSession } from '@/lib/auth/client';
@@ -15,8 +15,7 @@ import { RightPanel } from '@/components/panels/RightPanel';
 import { DocumentHeader } from './DocumentHeader';
 import { SEOModal } from './SEOModal';
 import type { JSONContent } from '@tiptap/react';
-import { AnimatePresence } from 'framer-motion';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useUnifiedAnalysis } from '@/hooks/useUnifiedAnalysis';
 import { useSuggestions } from '@/contexts/SuggestionContext';
 import type { UnifiedSuggestion } from '@/types/suggestions';
@@ -40,7 +39,7 @@ import { Link } from '@/components/tiptap-extension/link-extension';
 import { Selection } from '@/components/tiptap-extension/selection-extension';
 import { TrailingNode } from '@/components/tiptap-extension/trailing-node-extension';
 import { ImageUploadNode } from '@/components/tiptap-node/image-upload-node/image-upload-node-extension';
-import { EnhancedGrammarDecoration, updateSuggestions } from './extensions/EnhancedGrammarDecoration';
+import { EnhancedGrammarDecoration } from './extensions/EnhancedGrammarDecoration';
 import { EditorStatusBar } from './EditorStatusBar';
 
 // --- UI Primitives ---
@@ -83,7 +82,6 @@ import '@/components/tiptap-templates/simple/simple-editor.scss';
 import { SuggestionManager } from '@/lib/editor/suggestion-manager';
 import { createSuggestionTrackingPlugin } from '@/lib/editor/extensions/suggestion-tracking';
 
-
 interface BlogEditorProps {
   documentId: string;
   initialDocument?: {
@@ -101,7 +99,6 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const onDocumentTitleChange = useDocumentTitleUpdate();
   const documentUpdates = useDocumentUpdates();
   const {
-    suggestions,
     registerEditorActions,
     setHoveredSuggestionId,
     hoveredSuggestionId,
@@ -116,7 +113,8 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
   const [isPublishingDialogOpen, setIsPublishingDialogOpen] = useState(false);
   const [isSEOModalOpen, setIsSEOModalOpen] = useState(false);
   const [enableSEOChecks, setEnableSEOChecks] = useState(false);
-  
+  const [wordCount, setWordCount] = useState(0);
+
   // Create suggestion manager instance
   const suggestionManager = useRef(new SuggestionManager());
 
@@ -173,227 +171,99 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
     if (editor && registerEditorActions) {
       registerEditorActions({
         apply: (suggestionId: string, value: string) => {
-          console.log('[Apply Fix] Starting:', { suggestionId, value });
-          
-          // Special handling for document-wide suggestions
-          if (suggestionId.endsWith('-global')) {
-            console.log('[Apply Fix] Document-wide suggestion - no position needed');
-            
-            // Handle based on suggestion type
-            if (suggestionId.includes('seo')) {
-              // Open SEO modal for SEO-related suggestions
-              setIsSEOModalOpen(true);
-              toast.info('Please update your SEO settings');
-            } else {
-              // Show toast for other document-wide suggestions
-              toast.info(value || 'Please review this document-wide suggestion');
-            }
-            return;
-          }
-          
-          // Get position from SuggestionManager
           const position = suggestionManager.current.getPosition(suggestionId);
-          
           if (!position) {
             console.error('[Apply Fix] No position found for suggestion:', suggestionId);
             return;
           }
-          
-          console.log('[Apply Fix] Applying fix at position:', position, 'with value:', value);
-          
-          // Get the current text at this position to verify
-          try {
-            const currentText = editor.state.doc.textBetween(position.from, position.to);
-            console.log('[Apply Fix] Current text at position:', currentText);
-          } catch (e) {
-            console.error('[Apply Fix] Error getting text at position:', e);
-          }
-          
-          editor.chain()
-            .focus()
-            .setTextSelection({ from: position.from, to: position.to })
-            .insertContent(value)
-            .run();
-            
-          console.log('[Apply Fix] Fix applied successfully');
+          editor.chain().focus().setTextSelection({ from: position.from, to: position.to }).insertContent(value).run();
         },
-        getDocumentText: () => {
-          const text = editor.state.doc.textContent;
-          console.log('[BlogEditor] getDocumentText called:', {
-            length: text.length,
-            preview: text.substring(0, 100) + '...',
-            hasEditor: !!editor
-          });
-          return text;
-        },
+        getDocumentText: () => editor.state.doc.textContent,
       });
     }
-  }, [editor, registerEditorActions, setIsSEOModalOpen]); // Added setIsSEOModalOpen to deps
+  }, [editor, registerEditorActions]);
 
   const { saveState, lastSaved, handleContentChange, handleTitleChange, handleMetaChange } = useAutoSave(editor, documentId);
 
-  // Call our unified analysis hook (now uses retext for instant feedback)
-  const { runRealtimeSpellCheck, runSEOAnalysis } = useUnifiedAnalysis(
-    editor?.state.doc || null, 
-    editor?.isEditable || false, 
-    {
-      title,
-      metaDescription,
-      targetKeyword,
-      keywords,
-    },
+  // Define the callback for when analysis provides new suggestions
+  const handleSuggestionsChange = useCallback((newSuggestions: UnifiedSuggestion[]) => {
+    if (editor) {
+      suggestionManager.current.addSuggestions(newSuggestions, editor.state.doc);
+      editor.view.dispatch(editor.state.tr.setSelection(editor.state.selection).scrollIntoView());
+    }
+  }, [editor]);
+
+  // Call our unified analysis hook
+  const { runSEOAnalysis } = useUnifiedAnalysis(
+    editor?.state.doc || null,
+    editor?.isEditable || false,
+    handleSuggestionsChange,
+    { title, metaDescription, targetKeyword, keywords },
     documentId,
     enableSEOChecks
   );
 
-  // Update SuggestionManager when suggestions change
   useEffect(() => {
-    if (editor && suggestions) {
-      console.log('[BlogEditor] Adding suggestions to SuggestionManager:', {
-        suggestionCount: suggestions.length,
-        editorDocText: editor.state.doc.textContent,
-        editorDocLength: editor.state.doc.textContent.length,
-        firstSuggestion: suggestions[0] ? {
-          id: suggestions[0].id,
-          matchText: suggestions[0].matchText,
-          category: suggestions[0].category
-        } : null
-      });
-      
-      suggestionManager.current.addSuggestions(suggestions, editor.state.doc);
-      // Force re-render of decorations
-      editor.view.dispatch(editor.state.tr);
-    }
-  }, [suggestions, editor]);
-
-  useEffect(() => {
-    if (editor) {
-      console.log('[BlogEditor] Updating decorations with suggestions:', {
-        count: suggestions.length,
-        suggestions: suggestions.map((s: UnifiedSuggestion) => ({
-          id: s.id,
-          matchText: s.matchText,
-          category: s.category,
-          message: s.message
-        }))
-      });
-      updateSuggestions(editor, suggestions);
-    }
-  }, [suggestions, editor]);
-
-  // Sync title updates from initial document
-  useEffect(() => {
-    if (initialDocument?.title) {
-      setTitle(initialDocument.title);
-    }
-  }, [initialDocument?.title]);
-  
-  // Listen for title updates from sidebar
-  useEffect(() => {
-    const update = documentUpdates[documentId];
-    if (update?.title && update.timestamp > 0) {
-      setTitle(update.title);
-      // Force immediate re-render
-      console.log('Title updated from sidebar:', update.title);
-    }
-  }, [documentId, documentUpdates]);
-
-  // Set up content change handler
-  useEffect(() => {
-    if (!editor) return;
-
-    const handleUpdate = () => {
-      const content = editor.getJSON();
-      const plainText = editor.getText();
-      handleContentChange(content, plainText);
-
-      // NOTE: Real-time analysis is now handled automatically by retext in useUnifiedAnalysis
-      // No need for manual triggers - retext provides instant feedback for spell/grammar/style
-      // The old logic that triggered fast analysis on sentence end is no longer needed
-      
-      // Real-time spell check logic (kept for backward compatibility, but retext handles this)
-      const { from, empty } = editor.state.selection;
-      if (empty && from > 1) {
-        const textBefore = editor.state.doc.textBetween(0, from, "\n", " ");
-        const lastChar = textBefore.slice(-1);
-        if (/\s/.test(lastChar)) { // Fired on space
-          const lastWord = textBefore.trim().split(/\s+/).pop();
-          if (lastWord && lastWord.length > 2) {
-            runRealtimeSpellCheck(lastWord, editor.state.doc);
-          }
-        }
-        // Removed: Fast analysis trigger on sentence end - retext handles this automatically
+    if (editor && onDocumentTitleChange) {
+      if (initialDocument?.title) {
+        setTitle(initialDocument.title);
       }
-    };
-
-    editor.on('update', handleUpdate);
-    return () => {
-      editor.off('update', handleUpdate);
-    };
-  }, [editor, handleContentChange, runRealtimeSpellCheck]);
-
-  // Handle title changes
+      onDocumentTitleChange(documentId, title);
+    }
+  }, [editor, onDocumentTitleChange, title, initialDocument?.title, documentId]);
+  
   const onTitleChange = (newTitle: string) => {
     setTitle(newTitle);
     handleTitleChange(newTitle);
-    if (onDocumentTitleChange) {
-      onDocumentTitleChange(documentId, newTitle);
-    }
   };
-
-  // Handle meta description changes
+  
   const onMetaChange = (newMeta: string) => {
     setMetaDescription(newMeta);
     handleMetaChange(newMeta);
   };
 
-  // Handle author changes
-  const onAuthorChange = (newAuthor: string) => {
-    setAuthor(newAuthor);
-    // TODO: Save author to document
-  };
-
-  // Handle target keyword changes
-  const onTargetKeywordChange = (newKeyword: string) => {
-    setTargetKeyword(newKeyword);
-    // TODO: Save target keyword to document
-  };
-
-  // Handle keywords changes
-  const onKeywordsChange = (newKeywords: string[]) => {
-    setKeywords(newKeywords);
-    // TODO: Save keywords to document
-  };
-
-  const handlePreview = () => {
-    // Implement preview logic
-    console.log('Previewing...');
-  };
-
-  const handlePublish = () => {
-    setIsPublishingDialogOpen(true);
-  };
-
+  const onAuthorChange = (newAuthor: string) => setAuthor(newAuthor);
+  const onTargetKeywordChange = (newKeyword: string) => setTargetKeyword(newKeyword);
+  const onKeywordsChange = (newKeywords: string[]) => setKeywords(newKeywords);
+  const handlePreview = () => console.log('Preview clicked');
+  const handlePublish = () => setIsPublishingDialogOpen(true);
   const handleCheckSEO = () => {
     setEnableSEOChecks(true);
-    // Trigger immediate SEO analysis
-    if (runSEOAnalysis) {
-      runSEOAnalysis();
-    }
+    runSEOAnalysis();
+    toast.info('Running SEO analysis...');
   };
 
-  if (!editor) {
-    return <div>Loading editor...</div>;
-  }
+  const handleUpdate = useCallback(() => {
+    if (editor) {
+      handleContentChange(editor.getJSON(), editor.getText());
+      const stats = editor.storage.characterCount;
+      if (stats) {
+        setWordCount(stats.words());
+      }
+    }
+  }, [editor, handleContentChange]);
+
+  useEffect(() => {
+    if (editor) {
+      editor.on('update', handleUpdate);
+      return () => {
+        editor.off('update', handleUpdate);
+      };
+    }
+  }, [editor, handleUpdate]);
+
+  useEffect(() => {
+    const update = documentUpdates[documentId];
+    if (update?.title) setTitle(update.title);
+  }, [documentId, documentUpdates]);
+
+  if (!editor) return <div>Loading editor...</div>;
 
   return (
     <div className="flex h-full bg-gray-50">
-      {/* Main editor column */}
       <motion.div 
         className="flex-1 flex flex-col relative"
-        animate={{ 
-          marginRight: rightPanelOpen ? 0 : 0,
-        }}
+        animate={{ marginRight: rightPanelOpen ? '384px' : '0px' }}
         transition={{ duration: 0.3, ease: [0.4, 0.0, 0.2, 1] }}
       >
         <DocumentHeader
@@ -408,7 +278,6 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
           onPublish={handlePublish}
           onToggleRightPanel={() => setRightPanelOpen(!rightPanelOpen)}
         />
-
         <div className="flex-1 overflow-y-auto flex flex-col">
           <AnimatePresence>
             <div className="flex-1 max-w-4xl mx-auto w-full flex flex-col">
@@ -416,31 +285,31 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
                 <EditorContext.Provider value={{ editor }}>
                   <Toolbar>
                     <ToolbarGroup>
-                      <UndoRedoButton action="undo" />
-                      <UndoRedoButton action="redo" />
+                      <UndoRedoButton editor={editor} action="undo" />
+                      <UndoRedoButton editor={editor} action="redo" />
                       <ToolbarSeparator />
-                      <HeadingDropdownMenu />
+                      <HeadingDropdownMenu editor={editor} />
                       <ToolbarSeparator />
-                      <MarkButton type="bold" tooltip="Bold" />
-                      <MarkButton type="italic" tooltip="Italic" />
-                      <MarkButton type="underline" tooltip="Underline" />
+                      <MarkButton editor={editor} type="bold" tooltip="Bold" />
+                      <MarkButton editor={editor} type="italic" tooltip="Italic" />
+                      <MarkButton editor={editor} type="underline" tooltip="Underline" />
                       <ToolbarSeparator />
-                      <LinkPopover />
-                      <BlockQuoteButton />
-                      <CodeBlockButton />
-                      <ImageUploadButton />
+                      <LinkPopover editor={editor} />
+                      <BlockQuoteButton editor={editor} />
+                      <CodeBlockButton editor={editor} />
+                      <ImageUploadButton editor={editor} />
                       <ToolbarSeparator />
-                      <ListDropdownMenu />
+                      <ListDropdownMenu editor={editor} />
                       <ToolbarSeparator />
-                      <TextAlignButton align="left" />
-                      <TextAlignButton align="center" />
-                      <TextAlignButton align="right" />
-                      <TextAlignButton align="justify" />
+                      <TextAlignButton editor={editor} align="left" />
+                      <TextAlignButton editor={editor} align="center" />
+                      <TextAlignButton editor={editor} align="right" />
+                      <TextAlignButton editor={editor} align="justify" />
                       <ToolbarSeparator />
                       <SEOButton onClick={() => setIsSEOModalOpen(true)} />
                     </ToolbarGroup>
                     <Spacer />
-                    <ColorHighlightPopover />
+                    <ColorHighlightPopover editor={editor} />
                   </Toolbar>
                 </EditorContext.Provider>
                 <div className="flex-1 overflow-y-auto">
@@ -450,25 +319,21 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
             </div>
           </AnimatePresence>
         </div>
-
-        <EditorStatusBar onCheckSEO={handleCheckSEO} />
+        <EditorStatusBar onCheckSEO={handleCheckSEO} wordCount={wordCount} />
       </motion.div>
-
-      {/* Right panel */}
       <AnimatePresence mode="wait">
         {rightPanelOpen && (
           <RightPanel
             documentId={documentId}
+            editor={editor}
             title={title}
-            content={editor?.getText() || ''}
+            content={editor.getText()}
             metaDescription={metaDescription}
             targetKeyword={targetKeyword}
             keywords={keywords}
-            editor={editor}
           />
         )}
       </AnimatePresence>
-
       <SEOModal
         isOpen={isSEOModalOpen}
         onClose={() => setIsSEOModalOpen(false)}
@@ -479,7 +344,6 @@ export function BlogEditor({ documentId, initialDocument }: BlogEditorProps) {
         onKeywordsChange={onKeywordsChange}
         onMetaDescriptionChange={onMetaChange}
       />
-
       <PublishingDialog
         documentId={documentId}
         isOpen={isPublishingDialogOpen}

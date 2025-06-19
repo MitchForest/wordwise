@@ -4,7 +4,7 @@
  * @created 2024-12-28
  */
 
-import { UnifiedSuggestion, EnhancedSuggestion } from '@/types/suggestions';
+import { UnifiedSuggestion } from '@/types/suggestions';
 
 export class SuggestionDeduplicator {
   /**
@@ -18,7 +18,7 @@ export class SuggestionDeduplicator {
   static deduplicate(
     clientSuggestions: UnifiedSuggestion[],
     serverSuggestions: UnifiedSuggestion[],
-    aiEnhancedSuggestions: EnhancedSuggestion[]
+    aiEnhancedSuggestions: UnifiedSuggestion[]
   ): UnifiedSuggestion[] {
     const suggestionMap = new Map<string, UnifiedSuggestion>();
     const positionMap = new Map<string, Set<string>>(); // position -> suggestion IDs

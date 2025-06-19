@@ -1,19 +1,16 @@
 /**
  * @file services/ai/enhancement-service.ts
  * @purpose AI service that enhances all suggestions with context-aware improvements
- * using GPT-4o for better fixes and contextual understanding
- * @created 2024-12-28
+ * using a dedicated server-side endpoint.
+ * @created 2024-07-26
  */
 
-import { openai } from '@ai-sdk/openai';
-import { generateObject } from 'ai';
 import { z } from 'zod';
-import { UnifiedSuggestion } from '@/types/suggestions';
+import { UnifiedSuggestion, SuggestionAction } from '@/types/suggestions';
 import { analysisCache } from '@/services/analysis/cache';
 import { DocumentContext } from './document-context';
-import { EnhancedSuggestion } from './types';
 
-// SCHEMA: Define the structure for AI responses
+// SCHEMA: Define the structure for AI responses from our API endpoint
 const enhancementSchema = z.object({
   suggestions: z.array(z.object({
     id: z.string(),
@@ -26,7 +23,6 @@ const enhancementSchema = z.object({
 });
 
 export class AIEnhancementService {
-  private model = openai('gpt-4o');
   
   /**
    * @purpose Determine if a suggestion needs AI enhancement
@@ -84,7 +80,7 @@ export class AIEnhancementService {
   async enhanceAllSuggestions(
     suggestions: UnifiedSuggestion[],
     documentContext: DocumentContext
-  ): Promise<EnhancedSuggestion[]> {
+  ): Promise<UnifiedSuggestion[]> {
     // FILTER: Determine which suggestions need enhancement
     const toEnhance = suggestions.filter(s => this.shouldEnhance(s));
     const noEnhancement = suggestions.filter(s => !this.shouldEnhance(s));
@@ -97,19 +93,19 @@ export class AIEnhancementService {
     
     if (toEnhance.length === 0) {
       // Return all suggestions unchanged
-      return suggestions.map(s => ({ ...s, aiEnhanced: false } as EnhancedSuggestion));
+      return suggestions.map(s => ({ ...s, aiEnhanced: false } as UnifiedSuggestion));
     }
     
     // CHECK CACHE: Look for cached enhancements first
     const cacheKey = this.generateCacheKey(toEnhance, documentContext);
-    const cached = await analysisCache.getAsync<EnhancedSuggestion[]>(cacheKey);
+    const cached = await analysisCache.getAsync<UnifiedSuggestion[]>(cacheKey);
     if (cached) {
       console.log('[AI Enhancement] Cache hit');
       // Combine cached enhanced suggestions with non-enhanced ones
       const cachedMap = new Map(cached.map(s => [s.id, s]));
       return suggestions.map(s => {
         const cachedVersion = cachedMap.get(s.id);
-        return cachedVersion || { ...s, aiEnhanced: false } as EnhancedSuggestion;
+        return cachedVersion || { ...s, aiEnhanced: false } as UnifiedSuggestion;
       });
     }
     
@@ -124,12 +120,12 @@ export class AIEnhancementService {
     
     return suggestions.map(s => {
       const enhancedVersion = enhancedMap.get(s.id);
-      return enhancedVersion || { ...s, aiEnhanced: false } as EnhancedSuggestion;
+      return enhancedVersion || { ...s, aiEnhanced: false } as UnifiedSuggestion;
     });
   }
   
   /**
-   * @purpose Batch enhance multiple suggestions in a single API call
+   * @purpose Batch enhance multiple suggestions by calling the server-side API
    * @param suggestions - Suggestions to enhance
    * @param context - Document context
    * @returns Enhanced suggestions
@@ -137,31 +133,30 @@ export class AIEnhancementService {
   private async batchEnhance(
     suggestions: UnifiedSuggestion[],
     context: DocumentContext
-  ): Promise<EnhancedSuggestion[]> {
-    const prompt = this.buildEnhancementPrompt(suggestions, context);
-    
+  ): Promise<UnifiedSuggestion[]> {
     try {
-      const { object } = await generateObject({
-        model: this.model,
-        schema: enhancementSchema,
-        prompt,
-        temperature: 0.3, // Lower for consistency
+      const response = await fetch('/api/analysis/ai-enhance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ suggestions, documentContext: context }),
       });
+
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
       
-      return this.mergeEnhancements(suggestions, object.suggestions);
+      const result = await response.json();
+      const validation = enhancementSchema.safeParse(result);
+
+      if (!validation.success) {
+        console.error('[AI Enhancement] Invalid response from server:', validation.error);
+        throw new Error('Invalid response from enhancement API');
+      }
+
+      return this.mergeEnhancements(suggestions, validation.data.suggestions);
+
     } catch (error) {
       console.error('[AI Enhancement] Error:', error);
-      
-      // Handle specific error types
-      if (error instanceof Error) {
-        if (error.message.includes('rate limit')) {
-          console.log('[AI Enhancement] Rate limit exceeded');
-        } else if (error.message.includes('timeout')) {
-          console.log('[AI Enhancement] Request timeout');
-        } else if (error.message.includes('Invalid API Key')) {
-          console.error('[AI Enhancement] Invalid OpenAI API key');
-        }
-      }
       
       // FALLBACK: Return original suggestions on error with error flag
       return suggestions.map(s => ({ 
@@ -169,75 +164,10 @@ export class AIEnhancementService {
         aiError: true,
         aiEnhanced: false,
         isEnhancing: false
-      } as EnhancedSuggestion));
+      } as UnifiedSuggestion));
     }
   }
-  
-  /**
-   * @purpose Build a comprehensive prompt for AI enhancement
-   * @param suggestions - Suggestions to enhance
-   * @param context - Document context
-   * @returns Formatted prompt string
-   */
-  private buildEnhancementPrompt(
-    suggestions: UnifiedSuggestion[],
-    context: DocumentContext
-  ): string {
-    return `You are an expert writing assistant. Analyze and enhance these writing suggestions.
 
-Document Context:
-- Title: ${context.title || 'Untitled'}
-- Topic: ${context.detectedTopic || 'General'}
-- Tone: ${context.detectedTone || 'Neutral'}
-- Target Keyword: ${context.targetKeyword || 'None specified'}
-- Meta Description: ${context.metaDescription || 'Not set'}
-- First paragraph: ${context.firstParagraph}
-
-For each suggestion:
-1. If it has fixes, evaluate if they're contextually appropriate
-2. If fixes could be better, provide an enhanced fix
-3. If no fixes exist, generate the best fix
-4. Rate your confidence (0-1) in the enhancement
-5. Explain your reasoning briefly (max 20 words)
-
-CRITICAL STYLE RULES:
-- For passive voice: ALWAYS restructure to active voice (e.g., "was written by" → "wrote")
-- For weasel words: REMOVE them entirely or replace with specific facts
-- For wordiness: Simplify and make concise
-- For complex sentences: Break into shorter, clearer sentences
-
-Examples:
-- Passive: "The report was completed by the team" → "The team completed the report"
-- Weasel: "Some experts believe" → "Dr. Smith's research shows" OR remove entirely
-- Wordy: "due to the fact that" → "because"
-
-For SEO suggestions specifically:
-- If missing target keyword, suggest one based on the content
-- Ensure keyword appears naturally in title, meta description, and H1
-- Provide specific text improvements, not just advice
-- Consider search intent and user value
-
-Suggestions to enhance:
-${suggestions.map(s => `
-ID: ${s.id}
-Category: ${s.category}
-Error text: "${s.matchText || s.context.text}"
-Issue: ${s.message}
-Current fixes: ${s.actions.filter(a => a.type === 'fix').map(a => `"${a.value}"`).join(', ') || 'none'}
-Context: "${s.context.before || ''}[${s.matchText || s.context.text}]${s.context.after || ''}"
-${s.category === 'seo' ? `SEO Type: ${s.id.includes('title') ? 'Title' : s.id.includes('meta') ? 'Meta Description' : 'Content'}` : ''}
-`).join('\n')}
-
-Focus on:
-- Contextual accuracy (especially for spelling suggestions)
-- Clarity and conciseness
-- Maintaining document tone (${context.detectedTone})
-- Fixing the actual issue described
-- Providing actionable alternatives when possible
-- For SEO: specific keyword-optimized rewrites
-- For style: MUST fix the underlying issue (passive→active, remove weasels, etc.)`;
-  }
-  
   /**
    * @purpose Generate a stable cache key for the enhancement request
    * @param suggestions - Suggestions being enhanced
@@ -248,61 +178,64 @@ Focus on:
     suggestions: UnifiedSuggestion[],
     context: DocumentContext
   ): string {
-    // Use Web Crypto API for Edge runtime compatibility
-    const content = JSON.stringify({
-      suggestionIds: suggestions.map(s => s.id).sort(),
-      contextHash: this.simpleHash(context.firstParagraph)
-    });
-    return `ai-enhance-${this.simpleHash(content)}`;
+    // Generate a simple hash from key components
+    const suggestionIds = suggestions.map(s => s.id).join(',');
+    const contextString = `${context.title}-${context.detectedTopic}-${context.detectedTone}`;
+    const fullString = `${suggestionIds}-${contextString}`;
+    return `enhance-${this.simpleHash(fullString)}`;
   }
-  
+
   /**
-   * @purpose Simple hash function for Edge runtime compatibility
-   * @param str - String to hash
-   * @returns Hash string
+   * @purpose Simple hash function for cache key generation
    */
   private simpleHash(str: string): string {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = (hash << 5) - hash + char;
+      hash |= 0; // Convert to 32bit integer
     }
-    return Math.abs(hash).toString(36);
+    return hash.toString(16);
   }
   
   /**
-   * @purpose Merge AI enhancements with original suggestions
-   * @param suggestions - Original suggestions
-   * @param enhancements - AI enhancement results
-   * @returns Merged enhanced suggestions
+   * @purpose Merge the AI enhancements back into the original suggestion objects
+   * @param suggestions - The original suggestions
+   * @param enhancements - The AI-generated enhancements from the API
+   * @returns A new array of fully-enhanced suggestion objects
    */
   private mergeEnhancements(
     suggestions: UnifiedSuggestion[],
     enhancements: any[]
-  ): EnhancedSuggestion[] {
-    const enhancementMap = new Map(
-      enhancements.map(e => [e.id, e])
-    );
+  ): UnifiedSuggestion[] {
+    const enhancementMap = new Map(enhancements.map(e => [e.id, e]));
     
-    return suggestions.map(suggestion => {
-      const enhancement = enhancementMap.get(suggestion.id);
-      if (!enhancement) {
-        return suggestion as EnhancedSuggestion;
+    return suggestions.map(original => {
+      const enhancement = enhancementMap.get(original.id);
+      
+      if (enhancement) {
+        let newActions: SuggestionAction[] = original.actions;
+
+        if (enhancement.shouldReplace && enhancement.enhancedFix) {
+          newActions = [{ 
+            type: 'ai-fix',
+            label: 'Accept AI Fix',
+            value: enhancement.enhancedFix 
+          }];
+        }
+
+        return {
+          ...original,
+          aiEnhanced: true,
+          aiConfidence: enhancement.confidence,
+          aiReasoning: enhancement.reasoning,
+          isEnhancing: false,
+          actions: newActions,
+          alternativeFixes: enhancement.alternativeFixes || [],
+        };
       }
       
-      const originalFix = suggestion.actions.find(a => a.type === 'fix')?.value;
-      
-      return {
-        ...suggestion,
-        aiEnhanced: true,
-        aiFix: enhancement.enhancedFix || originalFix,
-        aiConfidence: enhancement.confidence,
-        aiReasoning: enhancement.reasoning,
-        shouldReplace: enhancement.shouldReplace,
-        alternativeFixes: enhancement.alternativeFixes,
-        originalFix: originalFix
-      } as EnhancedSuggestion;
+      return { ...original, aiEnhanced: false, isEnhancing: false };
     });
   }
 } 

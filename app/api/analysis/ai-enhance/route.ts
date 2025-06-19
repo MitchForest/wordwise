@@ -1,103 +1,122 @@
 /**
  * @file app/api/analysis/ai-enhance/route.ts
- * @purpose API endpoint for AI-enhanced suggestions using GPT-4o
- * @created 2024-12-28
+ * @purpose Server-side route for AI-powered suggestion enhancement
+ * @created 2024-07-26
  */
-
+import { openai } from '@ai-sdk/openai';
+import { generateObject } from 'ai';
+import { z } from 'zod';
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import { AIEnhancementService } from '@/services/ai/enhancement-service';
-import { DocumentContextExtractor } from '@/services/ai/document-context';
-import { checkUserAIUsage, trackAIUsage } from '@/services/ai/usage-limiter';
-import { getSchema } from '@tiptap/core';
-import { serverEditorExtensions } from '@/lib/editor/tiptap-extensions.server';
-import { AIEnhancementRequest } from '@/services/ai/types';
+import { UnifiedSuggestion } from '@/types/suggestions';
+import { DocumentContext } from '@/services/ai/document-context';
 
-const enhancementService = new AIEnhancementService();
-const contextExtractor = new DocumentContextExtractor();
+// Input validation schema
+const enhanceRequestSchema = z.object({
+  suggestions: z.array(z.any()), // Using any for now to avoid deep UnifiedSuggestion validation
+  documentContext: z.any(), // Same for DocumentContext
+});
 
-export async function POST(request: NextRequest) {
+// Schema for AI responses
+const enhancementSchema = z.object({
+    suggestions: z.array(z.object({
+    id: z.string(),
+    enhancedFix: z.string().optional(),
+    confidence: z.number().min(0).max(1),
+    reasoning: z.string(),
+    shouldReplace: z.boolean(),
+    alternativeFixes: z.array(z.string()).optional()
+  }))
+});
+
+function buildEnhancementPrompt(
+    suggestions: UnifiedSuggestion[],
+    context: DocumentContext
+  ): string {
+    return `You are an expert writing assistant. Analyze and enhance these writing suggestions.
+
+Document Context:
+- Title: ${context.title || 'Untitled'}
+- Topic: ${context.detectedTopic || 'General'}
+- Tone: ${context.detectedTone || 'Neutral'}
+- Target Keyword: ${context.targetKeyword || 'None specified'}
+- Meta Description: ${context.metaDescription || 'Not set'}
+- First paragraph: ${context.firstParagraph}
+
+For each suggestion:
+1. If it has fixes, evaluate if they're contextually appropriate
+2. If fixes could be better, provide an enhanced fix
+3. If no fixes exist, generate the best fix
+4. Rate your confidence (0-1) in the enhancement
+5. Explain your reasoning briefly (max 20 words)
+
+CRITICAL STYLE RULES:
+- For passive voice: ALWAYS restructure to active voice (e.g., "was written by" → "wrote")
+- For weasel words: REMOVE them entirely or replace with specific facts
+- For wordiness: Simplify and make concise
+- For complex sentences: Break into shorter, clearer sentences
+
+Examples:
+- Passive: "The report was completed by the team" → "The team completed the report"
+- Weasel: "Some experts believe" → "Dr. Smith's research shows" OR remove entirely
+- Wordy: "due to the fact that" → "because"
+
+For SEO suggestions specifically:
+- If missing target keyword, suggest one based on the content
+- Ensure keyword appears naturally in title, meta description, and H1
+- Provide specific text improvements, not just advice
+- Consider search intent and user value
+
+Suggestions to enhance:
+${suggestions.map(s => `
+ID: ${s.id}
+Category: ${s.category}
+Error text: "${s.matchText || s.context.text}"
+Issue: ${s.message}
+Current fixes: ${s.actions.filter(a => a.type === 'fix').map(a => `"${a.value}"`).join(', ') || 'none'}
+Context: "${s.context.before || ''}[${s.matchText || s.context.text}]${s.context.after || ''}"
+${s.category === 'seo' ? `SEO Type: ${s.id.includes('title') ? 'Title' : s.id.includes('meta') ? 'Meta Description' : 'Content'}` : ''}
+`).join('\n')}
+
+Focus on:
+- Contextual accuracy (especially for spelling suggestions)
+- Clarity and conciseness
+- Maintaining document tone (${context.detectedTone})
+- Fixing the actual issue described
+- Providing actionable alternatives when possible
+- For SEO: specific keyword-optimized rewrites
+- For style: MUST fix the underlying issue (passive→active, remove weasels, etc.)`;
+}
+
+export async function POST(req: NextRequest) {
   try {
-    // AUTHENTICATE: Check if user is logged in
-    const session = await auth.api.getSession({
-      headers: request.headers,
+    const body = await req.json();
+    const validation = enhanceRequestSchema.safeParse(body);
+
+    if (!validation.success) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+
+    const { suggestions, documentContext } = validation.data;
+    const model = openai('gpt-4o');
+    const prompt = buildEnhancementPrompt(suggestions, documentContext);
+
+    const { object } = await generateObject({
+      model,
+      schema: enhancementSchema,
+      prompt,
+      temperature: 0.3,
     });
-    
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    // RATE LIMIT: Check usage limits (1000 enhancements per day)
-    const canUseAI = await checkUserAIUsage(session.user.id);
-    if (!canUseAI) {
-      return NextResponse.json({ 
-        error: 'Daily AI enhancement limit reached',
-        enhanced: [] // Return empty enhancements
-      }, { status: 429 });
-    }
-    
-    // PARSE: Get request data
-    const body: AIEnhancementRequest = await request.json();
-    const { suggestions, doc: jsonDoc, metadata } = body;
-    
-    if (!suggestions || !jsonDoc) {
-      return NextResponse.json({ error: 'Missing required data' }, { status: 400 });
-    }
-    
-    // Skip if no suggestions to enhance
-    if (suggestions.length === 0) {
-      return NextResponse.json({ enhanced: [] });
-    }
-    
-    // CONVERT: JSON to ProseMirror doc
-    const schema = getSchema(serverEditorExtensions);
-    const doc = schema.nodeFromJSON(jsonDoc);
-    
-    // EXTRACT: Get document context
-    const context = contextExtractor.extract(doc, suggestions);
-    context.title = metadata?.title || context.title;
-    context.targetKeyword = metadata?.targetKeyword;
-    
-    console.log('[AI Enhancement API] Processing:', {
-      userId: session.user.id,
-      suggestionCount: suggestions.length,
-      documentTitle: context.title,
-      detectedTone: context.detectedTone,
-      detectedTopic: context.detectedTopic
-    });
-    
-    // ENHANCE: Call AI service
-    const enhanced = await enhancementService.enhanceAllSuggestions(
-      suggestions,
-      context
-    );
-    
-    // TRACK: Record usage
-    await trackAIUsage(session.user.id, enhanced.length);
-    
-    console.log('[AI Enhancement API] Enhanced suggestions:', {
-      total: enhanced.length,
-      withAIFixes: enhanced.filter(s => s.aiFix).length,
-      highConfidence: enhanced.filter(s => (s.aiConfidence || 0) > 0.8).length
-    });
-    
-    return NextResponse.json({ enhanced });
+
+    return NextResponse.json(object);
+
   } catch (error) {
-    console.error('[AI Enhancement API] Error:', error);
-    
-    // Provide more specific error messages
+    console.error('[API AI-ENHANCE] Error:', error);
+    // Determine status code based on error type
+    let statusCode = 500;
     if (error instanceof Error) {
-      if (error.message.includes('API key')) {
-        return NextResponse.json({ 
-          error: 'AI service configuration error',
-          enhanced: []
-        }, { status: 500 });
-      }
+        if (error.message.includes('authentication')) statusCode = 401;
+        if (error.message.includes('rate limit')) statusCode = 429;
     }
-    
-    return NextResponse.json({ 
-      error: 'AI enhancement failed',
-      enhanced: []
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to enhance suggestions' }, { status: statusCode });
   }
-} 
+}
