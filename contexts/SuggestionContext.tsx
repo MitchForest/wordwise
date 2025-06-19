@@ -166,9 +166,34 @@ export const SuggestionProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const visibleSuggestions = useMemo(() => {
-    return filter.categories.length === 0
+    const filtered = filter.categories.length === 0
       ? suggestions
       : suggestions.filter(s => filter.categories.includes(s.category));
+    
+    // Sort suggestions by position first, then by category priority
+    return filtered.sort((a, b) => {
+      // Get positions - use originalFrom if available, otherwise Infinity for document-wide
+      const posA = a.originalFrom ?? Infinity;
+      const posB = b.originalFrom ?? Infinity;
+      
+      // Primary sort by position
+      if (posA !== posB) {
+        return posA - posB;
+      }
+      
+      // Secondary sort by category priority when positions are equal
+      const priorityMap: Record<string, number> = {
+        spelling: 0,
+        grammar: 1,
+        seo: 2,
+        style: 3
+      };
+      
+      const priorityA = priorityMap[a.category] ?? 999;
+      const priorityB = priorityMap[b.category] ?? 999;
+      
+      return priorityA - priorityB;
+    });
   }, [suggestions, filter]);
 
   return (

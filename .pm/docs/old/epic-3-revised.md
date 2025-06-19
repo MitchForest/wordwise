@@ -194,9 +194,13 @@ export function QuickActions({
   const actions = hasSelection ? [
     { id: 'improve', label: 'Improve', icon: Sparkles },
     { id: 'formal', label: 'Make formal', icon: Briefcase },
+    { id: 'casual', label: 'Make casual', icon: MessageCircle },
     { id: 'concise', label: 'Make concise', icon: Minimize },
-    { id: 'expand', label: 'Expand', icon: Maximize }
+    { id: 'expand', label: 'Expand', icon: Maximize },
+    { id: 'persuasive', label: 'Make persuasive', icon: Target },
+    { id: 'simplify', label: 'Simplify', icon: Baby }
   ] : [
+    { id: 'ideas', label: 'Generate ideas', icon: Lightbulb },
     { id: 'outline', label: 'Create outline', icon: List },
     { id: 'intro', label: 'Write intro', icon: FileText },
     { id: 'conclusion', label: 'Write conclusion', icon: CheckCircle }
@@ -492,12 +496,126 @@ export function useAITemplates() {
 }
 ```
 
-#### 3.2 Keyboard Shortcuts
+#### 3.2 Template UI Component
+
+```typescript
+// components/chat/TemplateSelector.tsx
+export function TemplateSelector({ onSelect }: { onSelect: (template: string) => void }) {
+  const [category, setCategory] = useState<string>('all');
+  const { templates } = useAITemplates();
+  
+  const categories = [
+    { id: 'all', label: 'All Templates', icon: Grid },
+    { id: 'ideation', label: 'Ideas & Brainstorming', icon: Lightbulb },
+    { id: 'writing', label: 'Content Writing', icon: FileText },
+    { id: 'seo', label: 'SEO Optimization', icon: Search }
+  ];
+  
+  const filteredTemplates = Object.entries(templates).filter(
+    ([_, template]) => category === 'all' || template.category === category
+  );
+  
+  return (
+    <div className="p-4 border-b">
+      <h4 className="text-sm font-medium mb-3">Content Templates</h4>
+      
+      {/* Category Tabs */}
+      <div className="flex gap-2 mb-4">
+        {categories.map(cat => (
+          <button
+            key={cat.id}
+            onClick={() => setCategory(cat.id)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 text-sm rounded",
+              category === cat.id 
+                ? "bg-purple-100 text-purple-700" 
+                : "bg-gray-100 hover:bg-gray-200"
+            )}
+          >
+            <cat.icon className="w-4 h-4" />
+            {cat.label}
+          </button>
+        ))}
+      </div>
+      
+      {/* Template Grid */}
+      <div className="grid grid-cols-2 gap-2">
+        {filteredTemplates.map(([key, template]) => (
+          <button
+            key={key}
+            onClick={() => onSelect(key)}
+            className="p-3 text-left border rounded-lg hover:border-purple-500 hover:bg-purple-50"
+          >
+            <div className="font-medium text-sm">{template.name}</div>
+            <div className="text-xs text-gray-600 mt-1">
+              Click to use this template
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+#### 3.3 Template Variable Input
+
+```typescript
+// components/chat/TemplateInput.tsx
+export function TemplateInput({ 
+  template: templateKey, 
+  onSubmit 
+}: { 
+  template: string;
+  onSubmit: (variables: Record<string, string>) => void;
+}) {
+  const { templates } = useAITemplates();
+  const template = templates[templateKey];
+  const [values, setValues] = useState<Record<string, string>>({});
+  
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit(values);
+  };
+  
+  return (
+    <form onSubmit={handleSubmit} className="p-4 space-y-4">
+      <h4 className="font-medium">{template.name}</h4>
+      
+      {template.variables.map(variable => (
+        <div key={variable}>
+          <label className="block text-sm font-medium mb-1">
+            {variable.charAt(0).toUpperCase() + variable.slice(1)}
+          </label>
+          <input
+            type="text"
+            value={values[variable] || ''}
+            onChange={(e) => setValues({ ...values, [variable]: e.target.value })}
+            className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+            placeholder={`Enter ${variable}...`}
+            required
+          />
+        </div>
+      ))}
+      
+      <button
+        type="submit"
+        className="w-full px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+      >
+        Generate Content
+      </button>
+    </form>
+  );
+}
+```
+
+#### 3.4 Keyboard Shortcuts
 
 ```typescript
 // hooks/useAIShortcuts.ts
 export function useAIShortcuts(editor: Editor) {
   const { append } = useChat();
+  const { showTemplateSelector } = useAIPanel();
   
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -519,23 +637,29 @@ export function useAIShortcuts(editor: Editor) {
         }
       }
       
-      // Cmd/Ctrl + Shift + R: Rewrite formal
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'r') {
+      // Cmd/Ctrl + Shift + T: Show templates
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 't') {
+        e.preventDefault();
+        showTemplateSelector();
+      }
+      
+      // Cmd/Ctrl + Shift + B: Brainstorm ideas
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'b') {
         e.preventDefault();
         append({
           role: 'user',
-          content: 'Rewrite this text in a more formal style'
+          content: 'Help me brainstorm blog post ideas about the current topic'
         });
       }
     };
     
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [editor, append]);
+  }, [editor, append, showTemplateSelector]);
 }
 ```
 
-#### 3.3 Conversation Memory
+#### 3.5 Conversation Memory
 
 ```typescript
 // hooks/useChatMemory.ts
